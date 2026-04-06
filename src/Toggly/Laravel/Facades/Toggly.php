@@ -7,8 +7,10 @@ use Toggly\FeatureManagement\Core\FeatureManager;
 
 /**
  * Toggly Facade
- * 
+ *
  * @method static bool isEnabled(string $feature, ?array $context = null)
+ * @method static array{name: string, configurationValue: mixed}|null getVariant(string $featureKey)
+ * @method static mixed getVariantValue(string $featureKey)
  */
 class Toggly extends Facade
 {

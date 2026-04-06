@@ -43,6 +43,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Enable Variants
+    |--------------------------------------------------------------------------
+    |
+    | When true, definitions are loaded from evaluated-variants-signed with
+    | server-side evaluation. Use FeatureManager::getVariant / getVariantValue.
+    |
+    */
+    'enable_variants' => env('TOGGLY_ENABLE_VARIANTS', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Identity (evaluated variants)
+    |--------------------------------------------------------------------------
+    |
+    | Optional default user id sent as userId when fetching variants. Prefer
+    | FeatureProvider::setIdentity() per request when using a shared provider.
+    |
+    */
+    'identity' => env('TOGGLY_IDENTITY', null),
+
+    /*
+    |--------------------------------------------------------------------------
     | Allowed Key IDs
     |--------------------------------------------------------------------------
     |

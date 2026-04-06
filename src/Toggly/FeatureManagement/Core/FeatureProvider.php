@@ -47,6 +47,23 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
      */
     private array $secureFeatures = [];
 
+    /**
+     * Server-evaluated variant entries keyed by feature (enableVariants mode only).
+     *
+     * @var array<string, array{enabled: bool, variant: string, configurationValue: mixed}>
+     */
+    private array $variantEntries = [];
+
+    /**
+     * Per-request identity override (takes precedence over {@see TogglySettings::$identity}).
+     */
+    private ?string $identityOverride = null;
+
+    /**
+     * Identity last used for a variants HTTP fetch (for ETag isolation on shared HTTP clients).
+     */
+    private ?string $lastVariantsFetchIdentity = null;
+
     private bool $loaded = false;
     private ?int $lastDefinitionsTimestamp = null;
     private ?string $lastError = null;
@@ -203,9 +220,30 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 $this->loadSnapshot();
             }
 
-            $path = $this->settings->useSignedDefinitions
-                ? "definitions-signed/{$this->settings->appKey}/{$this->settings->environment}"
-                : "definitions/{$this->settings->appKey}/{$this->settings->environment}";
+            if ($this->settings->enableVariants) {
+                $identity = $this->getVariantIdentity();
+                if ($this->lastVariantsFetchIdentity !== $identity) {
+                    $this->httpClient->clearETag();
+                }
+                $this->lastVariantsFetchIdentity = $identity;
+
+                $path = sprintf(
+                    'evaluated-variants-signed/%s/%s',
+                    rawurlencode($this->settings->appKey),
+                    rawurlencode($this->settings->environment)
+                );
+                $query = [];
+                if ($identity !== null && $identity !== '') {
+                    $query['userId'] = $identity;
+                }
+                if ($query !== []) {
+                    $path .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+                }
+            } elseif ($this->settings->useSignedDefinitions) {
+                $path = "definitions-signed/{$this->settings->appKey}/{$this->settings->environment}";
+            } else {
+                $path = "definitions/{$this->settings->appKey}/{$this->settings->environment}";
+            }
 
             $response = $this->httpClient->get($path);
 
@@ -221,6 +259,11 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
             if ($data === null) {
                 $this->logger->warning('Received empty or invalid response from Toggly');
+                return;
+            }
+
+            if ($this->settings->enableVariants) {
+                $this->processEvaluatedVariantsResponse($body, $data);
                 return;
             }
 
@@ -240,9 +283,8 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
                 // Verify signature
                 try {
-                    // Extract the raw defs array bytes from the JSON body
-                    // to preserve exact formatting for signature verification
-                    $rawDefs = $this->extractRawDefsJson($body);
+                    // Extract the raw defs value from the JSON body for signature verification
+                    $rawDefs = $this->extractSignedDefsFromBody($body);
 
                     $valid = $this->signatureVerifier->verify(
                         $rawDefs,
@@ -383,23 +425,219 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
     }
 
     /**
-     * Check if feature has AlwaysOn filter
+     * Override identity for evaluated-variants requests (call from request middleware when the provider is a singleton).
      */
-    /**
-     * Extract the raw JSON bytes for the "defs" array from the response body.
-     * Uses a regex to find "defs" then bracket-counts via a helper.
-     */
-    private function extractRawDefsJson(string $body): string
+    public function setIdentity(?string $identity): void
     {
-        $pos = strpos($body, '"defs"');
-        if ($pos !== false) {
-            $pos = strpos($body, '[', $pos);
+        $this->identityOverride = $identity;
+    }
+
+    private function getVariantIdentity(): ?string
+    {
+        if ($this->identityOverride !== null && $this->identityOverride !== '') {
+            return $this->identityOverride;
         }
-        if ($pos === false) {
+        $id = $this->settings->identity;
+        return $id !== null && $id !== '' ? $id : null;
+    }
+
+    /**
+     * Parse and apply evaluated-variants-signed response (defs object keyed by feature).
+     */
+    private function processEvaluatedVariantsResponse(string $body, array $data): void
+    {
+        $defsRaw = $data['defs'] ?? null;
+        if (!is_array($defsRaw)) {
+            $this->logger->warning('evaluated-variants-signed response missing defs object');
+            return;
+        }
+
+        $timestamp = (int)($data['timestamp'] ?? 0);
+        $signature = (string)($data['signature'] ?? '');
+        $kid = (string)($data['kid'] ?? '');
+
+        if ($this->settings->useSignedDefinitions && $this->signatureVerifier !== null) {
+            if ($signature !== '' && $kid !== '') {
+                if ($this->lastDefinitionsTimestamp !== null && $timestamp < $this->lastDefinitionsTimestamp) {
+                    $this->logger->warning('Received variant definitions with older timestamp', [
+                        'current' => $this->lastDefinitionsTimestamp,
+                        'received' => $timestamp,
+                    ]);
+                    return;
+                }
+
+                try {
+                    $rawDefs = $this->extractSignedDefsFromBody($body);
+                    $valid = $this->signatureVerifier->verify(
+                        $rawDefs,
+                        $signature,
+                        $kid,
+                        $timestamp
+                    );
+
+                    if (!$valid) {
+                        $this->logger->error('Invalid signature on evaluated-variants response');
+                        return;
+                    }
+                } catch (SignatureVerificationException $e) {
+                    $this->logger->error('Signature verification failed for evaluated-variants', ['error' => $e->getMessage()]);
+                    return;
+                }
+            } else {
+                $this->logger->notice('evaluated-variants-signed response has no signature; skipping verification');
+            }
+        }
+
+        $this->variantEntries = [];
+        $features = [];
+
+        foreach ($defsRaw as $featureKey => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = (string)$featureKey;
+            $enabled = (bool)($row['enabled'] ?? false);
+            $variantName = isset($row['variant']) ? (string)$row['variant'] : '';
+            $configurationValue = $row['configurationValue'] ?? null;
+
+            $this->variantEntries[$key] = [
+                'enabled' => $enabled,
+                'variant' => $variantName,
+                'configurationValue' => $configurationValue,
+            ];
+
+            $filters = $enabled ? [['name' => 'AlwaysOn']] : [['name' => 'AlwaysOff']];
+            $features[] = new FeatureDefinition([
+                'featureKey' => $key,
+                'filters' => $filters,
+            ]);
+        }
+
+        $this->lastDefinitionsTimestamp = $timestamp > 0 ? $timestamp : $this->lastDefinitionsTimestamp;
+
+        if ($this->snapshotProvider !== null) {
+            $this->snapshotProvider->saveSnapshot(
+                $features,
+                $signature !== '' ? $signature : null,
+                $kid !== '' ? $kid : null,
+                $timestamp > 0 ? $timestamp : null
+            );
+        }
+
+        foreach ($features as $featureDefinition) {
+            $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
+
+            if ($featureDefinition->securedFeature) {
+                $this->secureFeatures[$featureDefinition->featureKey] = true;
+            } else {
+                unset($this->secureFeatures[$featureDefinition->featureKey]);
+            }
+
+            $isEnabled = $this->isAlwaysOn($featureDefinition);
+            if ($this->featureStateService instanceof FeatureStateService) {
+                $this->featureStateService->updateFeatureState($featureDefinition->featureKey, $isEnabled);
+            }
+        }
+
+        $this->updateExperimentsMapping($features);
+
+        if ($this->featureStateService instanceof FeatureStateService) {
+            $this->featureStateService->notifyDefinitionsChanged();
+        }
+        $this->loaded = true;
+        $this->lastRefresh = time();
+
+        $this->tryConnectWebSocket();
+    }
+
+    /**
+     * @return array{name: string, configurationValue: mixed}|null
+     */
+    public function getVariant(string $featureKey): ?array
+    {
+        if (!$this->settings->enableVariants) {
+            return null;
+        }
+
+        if (!isset($this->variantEntries[$featureKey])) {
+            return null;
+        }
+
+        $entry = $this->variantEntries[$featureKey];
+        if (!$entry['enabled']) {
+            return null;
+        }
+
+        return [
+            'name' => $entry['variant'],
+            'configurationValue' => $entry['configurationValue'],
+        ];
+    }
+
+    /**
+     * @return mixed|null
+     */
+    public function getVariantValue(string $featureKey)
+    {
+        $variant = $this->getVariant($featureKey);
+        if ($variant === null) {
+            return null;
+        }
+
+        return $variant['configurationValue'] ?? null;
+    }
+
+    /**
+     * Extract the raw JSON bytes for the signed "defs" value (array or object) from the response body.
+     */
+    private function extractSignedDefsFromBody(string $body): string
+    {
+        if (preg_match('/"defs"\s*:\s*([\[\{])/u', $body, $matches, PREG_OFFSET_CAPTURE) !== 1) {
             return '[]';
         }
 
-        return $this->extractBalancedBrackets($body, $pos);
+        $openChar = $matches[1][0];
+        $openIdx = $matches[1][1];
+
+        if ($openChar === '[') {
+            return $this->extractBalancedBrackets($body, $openIdx);
+        }
+
+        return $this->extractBalancedBraces($body, $openIdx);
+    }
+
+    /**
+     * Extract a balanced {...} substring starting at $openIdx.
+     */
+    private function extractBalancedBraces(string $json, int $openIdx): string
+    {
+        $depth = 0;
+        $inString = false;
+        $len = strlen($json);
+        $i = $openIdx;
+
+        while ($i < $len) {
+            $ch = $json[$i];
+
+            if ($ch === '\\' && $inString) {
+                $i += 2;
+                continue;
+            }
+
+            if ($ch === '"') {
+                $inString = !$inString;
+            } elseif (!$inString) {
+                if ($ch === '{') {
+                    $depth++;
+                } elseif ($ch === '}' && --$depth === 0) {
+                    return substr($json, $openIdx, $i - $openIdx + 1);
+                }
+            }
+
+            $i++;
+        }
+
+        return '{}';
     }
 
     /**
@@ -553,6 +791,8 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         return [
             'app_key' => $this->settings->appKey,
             'environment' => $this->settings->environment,
+            'enable_variants' => $this->settings->enableVariants,
+            'variants_count' => count($this->variantEntries),
             'definitions_count' => count($this->definitions),
             'experiments_count' => count($this->experiments),
             'last_error' => $this->lastError,

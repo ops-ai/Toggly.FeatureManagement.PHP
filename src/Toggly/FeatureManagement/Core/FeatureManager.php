@@ -208,4 +208,24 @@ class FeatureManager
         // Fallback to session ID or random
         return session_id() ?: uniqid('', true);
     }
+
+    /**
+     * Assigned variant for a feature when variant mode is enabled (server-evaluated).
+     *
+     * @return array{name: string, configurationValue: mixed}|null
+     */
+    public function getVariant(string $featureKey): ?array
+    {
+        return $this->featureProvider->getVariant($featureKey);
+    }
+
+    /**
+     * Configuration value for the feature's assigned variant, or null.
+     *
+     * @return mixed|null
+     */
+    public function getVariantValue(string $featureKey)
+    {
+        return $this->featureProvider->getVariantValue($featureKey);
+    }
 }

@@ -23,6 +23,18 @@ class TogglySettings
     public bool $useSignedDefinitions = false;
 
     /**
+     * When true, fetches evaluated feature variants from evaluated-variants-signed (server-side evaluation).
+     * Requires {@see $useSignedDefinitions} for signature verification when the API returns a signature.
+     */
+    public bool $enableVariants = false;
+
+    /**
+     * Identity (user id) sent as userId when fetching evaluated variants. Override per request via
+     * {@see FeatureProvider::setIdentity()} when the provider is shared across users.
+     */
+    public ?string $identity = null;
+
+    /**
      * Base URL of the toggly instance. Leave blank unless you have a reason to change
      */
     public ?string $baseUrl = null;
@@ -70,6 +82,14 @@ class TogglySettings
         }
         if (isset($config['use_signed_definitions'])) {
             $this->useSignedDefinitions = (bool)$config['use_signed_definitions'];
+        }
+        if (isset($config['enable_variants'])) {
+            $this->enableVariants = (bool)$config['enable_variants'];
+        }
+        if (isset($config['identity'])) {
+            $this->identity = $config['identity'] !== null && $config['identity'] !== ''
+                ? (string)$config['identity']
+                : null;
         }
         if (isset($config['base_url'])) {
             $this->baseUrl = $config['base_url'];

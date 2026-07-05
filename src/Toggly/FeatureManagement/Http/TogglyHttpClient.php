@@ -8,6 +8,7 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Toggly\FeatureManagement\SdkIdentity;
 
 /**
  * HTTP client wrapper for Toggly API with retry logic and ETag support
@@ -25,7 +26,7 @@ class TogglyHttpClient
         ClientInterface $httpClient,
         RequestFactoryInterface $requestFactory,
         string $baseUrl,
-        string $userAgent = 'Toggly.FeatureManagement.PHP/1.0',
+        string $userAgent = SdkIdentity::userAgent(),
         ?LoggerInterface $logger = null
     ) {
         $this->httpClient = $httpClient;

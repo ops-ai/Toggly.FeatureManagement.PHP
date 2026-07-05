@@ -15,6 +15,7 @@ use Toggly\FeatureManagement\Core\MetricsRegistryService;
 use Toggly\FeatureManagement\Core\MetricsService;
 use Toggly\FeatureManagement\Core\UsageStatsProvider;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\SdkIdentity;
 use Toggly\FeatureManagement\Storage\SnapshotProviders\DatabaseSnapshotProvider;
 use Toggly\FeatureManagement\Storage\SnapshotProviders\FileSnapshotProvider;
 use Toggly\FeatureManagement\Storage\SnapshotSettings;
@@ -47,7 +48,7 @@ class ServiceProvider extends BaseServiceProvider
                 $httpClient,
                 $requestFactory,
                 $settings->getBaseUrl(),
-                'Toggly.FeatureManagement.PHP/1.0',
+                SdkIdentity::userAgent(),
                 $app->make(\Psr\Log\LoggerInterface::class)
             );
         });

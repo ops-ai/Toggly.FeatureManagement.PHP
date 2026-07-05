@@ -13,6 +13,7 @@ use Toggly\FeatureManagement\Core\MetricsRegistryService;
 use Toggly\FeatureManagement\Core\MetricsService;
 use Toggly\FeatureManagement\Core\UsageStatsProvider;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\SdkIdentity;
 use Toggly\FeatureManagement\Storage\SnapshotProviders\CacheSnapshotProvider;
 use Toggly\FeatureManagement\Storage\SnapshotSettings;
 use Toggly\WordPress\Http\WordPressFeatureContextProvider;
@@ -96,7 +97,7 @@ class TogglyPlugin
             new \Toggly\WordPress\Http\WordPressHttpClient(),
             new \Toggly\WordPress\Http\WordPressRequestFactory(),
             $settings->getBaseUrl(),
-            'Toggly.FeatureManagement.PHP/1.0'
+            SdkIdentity::userAgent()
         );
 
         // Create snapshot provider

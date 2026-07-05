@@ -10,6 +10,7 @@ use Toggly\FeatureManagement\Contracts\IFeatureExperimentProvider;
 use Toggly\FeatureManagement\Contracts\SecureFeatureProviderInterface;
 use Toggly\FeatureManagement\Exceptions\SignatureVerificationException;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\SdkIdentity;
 use Toggly\FeatureManagement\Http\WebSocketClient;
 use Toggly\FeatureManagement\Models\FeatureDefinition;
 use Toggly\FeatureManagement\Models\SignedDefinitionsResponse;
@@ -386,7 +387,12 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             } else {
                 $wsBase = $baseUrl;
             }
-            $wsUrl = $wsBase . "/{$this->settings->appKey}/ws";
+            $queryParams = [];
+            $etag = $this->httpClient->getLastETag();
+            if ($etag !== null && $etag !== '') {
+                $queryParams['rev'] = $etag;
+            }
+            $wsUrl = $wsBase . "/{$this->settings->appKey}/ws?" . SdkIdentity::buildQueryString($queryParams);
 
             $connected = $this->webSocketClient->connect($wsUrl, function () {
                 $this->logger->info('WebSocket update received, refreshing features');

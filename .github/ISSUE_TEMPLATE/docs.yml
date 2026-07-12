@@ -1,0 +1,40 @@
+name: Documentation
+description: Report a docs, README, or examples gap
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for inaccurate or missing documentation in this repository or linked docs pages.
+  - type: dropdown
+    id: location
+    attributes:
+      label: Where is the gap?
+      options:
+        - README
+        - QUICK_START / PUBLISHING
+        - docs.toggly.io
+        - Code comments / examples
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link or path
+      placeholder: e.g. README.md
+    validations:
+      required: false
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix
+    validations:
+      required: false

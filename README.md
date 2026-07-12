@@ -1,10 +1,13 @@
 # Toggly Feature Management for PHP
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/toggly/feature-management-php.svg)](https://packagist.org/packages/toggly/feature-management-php)
-[![Total Downloads](https://img.shields.io/packagist/dt/toggly/feature-management-php.svg)](https://packagist.org/packages/toggly/feature-management-php)
-[![License](https://img.shields.io/packagist/l/toggly/feature-management-php.svg)](https://packagist.org/packages/toggly/feature-management-php)
+<p align="center">
+  <a href="https://packagist.org/packages/toggly/feature-management-php"><img src="https://img.shields.io/packagist/v/toggly/feature-management-php.svg" alt="Packagist"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://docs.toggly.io"><img src="https://img.shields.io/badge/docs-docs.toggly.io-blue.svg" alt="Documentation"></a>
+  <a href="https://toggly.io"><img src="https://img.shields.io/badge/website-toggly.io-0A66C2.svg" alt="Website"></a>
+</p>
 
-A comprehensive PHP library for Toggly feature management with native Laravel and WordPress support.
+Official PHP SDK for [Toggly](https://toggly.io) feature flags — Composer package with native Laravel and WordPress support.
 
 ## Features
 
@@ -273,10 +276,6 @@ class MyContextProvider implements FeatureContextProviderInterface
 - WordPress 5.0 or higher
 - No external dependencies (uses WordPress APIs)
 
-## License
-
-MIT
-
 ## Architecture
 
 The library follows a modular architecture:
@@ -317,12 +316,19 @@ The project follows PSR-12 coding standards.
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines first.
+Please **open an issue first** for bugs and feature ideas, then follow [`CONTRIBUTING.md`](CONTRIBUTING.md). Large PRs without prior discussion may be closed.
+
+## Security
+
+Report vulnerabilities privately via [GitHub Private Vulnerability Reporting](https://github.com/ops-ai/Toggly.FeatureManagement.PHP/security/advisories/new). See [`SECURITY.md`](SECURITY.md). Do not file public issues for security reports.
 
 ## License
 
-MIT License - see LICENSE file for details.
+[MIT](LICENSE)
 
 ## Support
 
-For support, visit [https://toggly.io](https://toggly.io) or [open an issue](https://github.com/ops-ai/Toggly.FeatureManagement.PHP/issues).
+- Guides and API references: [docs.toggly.io](https://docs.toggly.io)
+- Bugs and features: [GitHub Issues](https://github.com/ops-ai/Toggly.FeatureManagement.PHP/issues/new/choose) (structured templates)
+- Publishing: [`PUBLISHING.md`](PUBLISHING.md)
+- Code of conduct: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)

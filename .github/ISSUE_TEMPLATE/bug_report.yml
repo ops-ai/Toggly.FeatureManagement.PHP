@@ -1,0 +1,66 @@
+name: Bug report
+description: Report incorrect PHP SDK behavior or a regression
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the Toggly PHP SDK. Please fill out as much as you can.
+        For security issues, use [private vulnerability reporting](https://github.com/ops-ai/Toggly.FeatureManagement.PHP/security/advisories/new) instead.
+  - type: dropdown
+    id: integration
+    attributes:
+      label: Integration
+      options:
+        - Core library (Composer)
+        - Laravel
+        - WordPress
+        - Other / unsure
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: Version of `toggly/feature-management-php` from Composer / Packagist
+      placeholder: e.g. 1.2.0
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime / environment
+      description: PHP version and framework versions if relevant
+      placeholder: e.g. PHP 8.3, Laravel 11, WordPress 6.7
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install package
+        2. Configure with ...
+        3. Call ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Optional stack traces or screenshots (redact secrets)
+    validations:
+      required: false

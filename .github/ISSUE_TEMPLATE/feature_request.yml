@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a new capability or improvement for the PHP SDK
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem you are trying to solve. Maintainers may ask clarifying questions before implementation.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      multiple: true
+      options:
+        - Core library
+        - Laravel integration
+        - WordPress plugin
+        - Snapshot / storage providers
+        - Documentation / DX
+        - Other / unsure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to accomplish that is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false

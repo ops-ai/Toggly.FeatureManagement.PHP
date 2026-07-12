@@ -1,6 +1,6 @@
 {
     "name": "toggly/feature-management-php",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Toggly Feature Management library for PHP with Laravel and WordPress support",
     "type": "library",
     "keywords": [

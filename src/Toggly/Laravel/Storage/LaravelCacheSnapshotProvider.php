@@ -63,13 +63,21 @@ class LaravelCacheSnapshotProvider implements FeatureSnapshotProviderInterface
     /**
      * @inheritDoc
      */
-    public function saveSnapshot(array $features, ?string $signature = null, ?string $keyId = null, ?int $timestamp = null): void
-    {
+    public function saveSnapshot(
+        array $features,
+        ?string $signature = null,
+        ?string $keyId = null,
+        ?int $timestamp = null,
+        ?string $signedDefsJson = null,
+        ?string $etag = null
+    ): void {
         $data = [
             'features' => array_map(fn($f) => $f->toArray(), $features),
             'signature' => $signature,
             'keyId' => $keyId,
             'timestamp' => $timestamp,
+            'signedDefsJson' => $signedDefsJson,
+            'etag' => $etag,
         ];
 
         if ($this->ttl === null) {
@@ -92,6 +100,8 @@ class LaravelCacheSnapshotProvider implements FeatureSnapshotProviderInterface
                 'signature' => null,
                 'keyId' => null,
                 'timestamp' => null,
+                'signedDefsJson' => null,
+                'etag' => null,
             ];
         }
 
@@ -107,6 +117,8 @@ class LaravelCacheSnapshotProvider implements FeatureSnapshotProviderInterface
             'signature' => $data['signature'] ?? null,
             'keyId' => $data['keyId'] ?? null,
             'timestamp' => $data['timestamp'] ?? null,
+            'signedDefsJson' => $data['signedDefsJson'] ?? null,
+            'etag' => $data['etag'] ?? null,
         ];
     }
 
@@ -165,7 +177,7 @@ class LaravelCacheSnapshotProvider implements FeatureSnapshotProviderInterface
     }
 
     /**
-     * Clear all cached snapshots
+     * @inheritDoc
      */
     public function clear(): void
     {

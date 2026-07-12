@@ -72,6 +72,13 @@ class TogglySettings
      */
     public bool $enableLiveUpdates = true;
 
+    /**
+     * Optional error callback invoked on refresh/snapshot failures (OPS-277 parity).
+     * Signature: function (string $message, ?\Throwable $exception): void
+     * @var callable|null
+     */
+    public $onError = null;
+
     public function __construct(array $config = [])
     {
         if (isset($config['app_key'])) {
@@ -104,8 +111,8 @@ class TogglySettings
             $this->undefinedEnabledOnDevelopment = (bool)$config['undefined_enabled_on_development'];
         }
         if (isset($config['allowed_key_ids'])) {
-            $this->allowedKeyIds = is_array($config['allowed_key_ids']) 
-                ? $config['allowed_key_ids'] 
+            $this->allowedKeyIds = is_array($config['allowed_key_ids'])
+                ? $config['allowed_key_ids']
                 : explode(',', $config['allowed_key_ids']);
         }
         if (isset($config['refresh_interval'])) {
@@ -113,6 +120,9 @@ class TogglySettings
         }
         if (isset($config['enable_live_updates'])) {
             $this->enableLiveUpdates = (bool)$config['enable_live_updates'];
+        }
+        if (isset($config['on_error']) && is_callable($config['on_error'])) {
+            $this->onError = $config['on_error'];
         }
     }
 

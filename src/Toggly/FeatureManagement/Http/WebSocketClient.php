@@ -51,7 +51,8 @@ class WebSocketClient
      * Connect to WebSocket URL.
      *
      * @param string   $url      WebSocket URL (wss:// or ws://)
-     * @param callable $onUpdate Callback invoked when a feature-update message arrives
+     * @param callable $onUpdate Callback invoked when a feature-update message arrives.
+     *                           Receives bool $forceJwksRefresh (true for signing-key-updated).
      *
      * @return bool True if the connection was established
      */
@@ -423,9 +424,15 @@ class WebSocketClient
                 return;
             }
 
-            if ($type === 'flags-updated' || $type === 'update') {
+            if ($type === 'signing-key-updated') {
+                $this->logger->debug('WebSocket: signing-key-updated, clearing JWKS and refreshing');
+                $this->invokeCallback(true);
+                return;
+            }
+
+            if ($type === 'flags-updated' || $type === 'update' || $type === 'sync') {
                 $this->logger->debug('WebSocket: definitions updated, triggering refresh');
-                $this->invokeCallback();
+                $this->invokeCallback(false);
                 return;
             }
 
@@ -436,7 +443,7 @@ class WebSocketClient
         // Plain-text signals (non-JSON)
         if ($data === 'update' || $data === 'flags-updated') {
             $this->logger->debug('WebSocket: plain-text update signal received');
-            $this->invokeCallback();
+            $this->invokeCallback(false);
             return;
         }
 
@@ -446,14 +453,14 @@ class WebSocketClient
     /**
      * Safely invoke the onUpdate callback.
      */
-    private function invokeCallback(): void
+    private function invokeCallback(bool $forceJwksRefresh = false): void
     {
         if ($this->onUpdate === null) {
             return;
         }
 
         try {
-            ($this->onUpdate)();
+            ($this->onUpdate)($forceJwksRefresh);
         } catch (\Exception $e) {
             $this->logger->error('WebSocket: update callback error: ' . $e->getMessage());
         }

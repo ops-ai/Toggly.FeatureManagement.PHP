@@ -31,16 +31,24 @@ class FileSnapshotProvider implements FeatureSnapshotProviderInterface
     /**
      * @inheritDoc
      */
-    public function saveSnapshot(array $features, ?string $signature = null, ?string $keyId = null, ?int $timestamp = null): void
-    {
+    public function saveSnapshot(
+        array $features,
+        ?string $signature = null,
+        ?string $keyId = null,
+        ?int $timestamp = null,
+        ?string $signedDefsJson = null,
+        ?string $etag = null
+    ): void {
         $filename = $this->settings->documentName ?? 'toggly_features.json';
         $filepath = $this->directory . $filename;
-        
+
         $data = [
             'features' => array_map(fn($f) => $f->toArray(), $features),
             'signature' => $signature,
             'keyId' => $keyId,
             'timestamp' => $timestamp,
+            'signedDefsJson' => $signedDefsJson,
+            'etag' => $etag,
         ];
 
         // Atomic write using temp file
@@ -57,33 +65,27 @@ class FileSnapshotProvider implements FeatureSnapshotProviderInterface
         $filename = $this->settings->documentName ?? 'toggly_features.json';
         $filepath = $this->directory . $filename;
 
+        $empty = [
+            'features' => null,
+            'signature' => null,
+            'keyId' => null,
+            'timestamp' => null,
+            'signedDefsJson' => null,
+            'etag' => null,
+        ];
+
         if (!file_exists($filepath)) {
-            return [
-                'features' => null,
-                'signature' => null,
-                'keyId' => null,
-                'timestamp' => null,
-            ];
+            return $empty;
         }
 
         $content = file_get_contents($filepath);
         if ($content === false) {
-            return [
-                'features' => null,
-                'signature' => null,
-                'keyId' => null,
-                'timestamp' => null,
-            ];
+            return $empty;
         }
 
         $data = json_decode($content, true);
         if ($data === null) {
-            return [
-                'features' => null,
-                'signature' => null,
-                'keyId' => null,
-                'timestamp' => null,
-            ];
+            return $empty;
         }
 
         $features = [];
@@ -98,6 +100,8 @@ class FileSnapshotProvider implements FeatureSnapshotProviderInterface
             'signature' => $data['signature'] ?? null,
             'keyId' => $data['keyId'] ?? null,
             'timestamp' => $data['timestamp'] ?? null,
+            'signedDefsJson' => $data['signedDefsJson'] ?? null,
+            'etag' => $data['etag'] ?? null,
         ];
     }
 
@@ -108,7 +112,7 @@ class FileSnapshotProvider implements FeatureSnapshotProviderInterface
     {
         $filename = $this->settings->jwkDocumentName ?? 'toggly_jwks.json';
         $filepath = $this->directory . $filename;
-        
+
         $data = [
             'jwks' => [
                 'keys' => array_map(function ($jwk) {
@@ -172,5 +176,20 @@ class FileSnapshotProvider implements FeatureSnapshotProviderInterface
             'jwks' => $jwks,
             'timestamp' => $data['timestamp'] ?? null,
         ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clear(): void
+    {
+        $featuresFile = $this->directory . ($this->settings->documentName ?? 'toggly_features.json');
+        $jwksFile = $this->directory . ($this->settings->jwkDocumentName ?? 'toggly_jwks.json');
+        if (file_exists($featuresFile)) {
+            @unlink($featuresFile);
+        }
+        if (file_exists($jwksFile)) {
+            @unlink($jwksFile);
+        }
     }
 }

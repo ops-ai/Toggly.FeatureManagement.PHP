@@ -108,6 +108,14 @@ class JwkManager
     }
 
     /**
+     * Clear in-memory JWKS key cache (e.g. after signing-key-updated).
+     */
+    public function clearCache(): void
+    {
+        $this->keyCache = [];
+    }
+
+    /**
      * Find and construct ECDSA key from JWKS
      * @return resource|null
      */

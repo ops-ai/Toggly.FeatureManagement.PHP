@@ -44,9 +44,23 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
             signature VARCHAR(255),
             key_id VARCHAR(255),
             timestamp BIGINT,
+            signed_defs_json LONGTEXT,
+            etag VARCHAR(255),
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )";
         $this->pdo->exec($sql);
+
+        // Best-effort migration for tables created before signed_defs_json/etag existed.
+        try {
+            $this->pdo->exec("ALTER TABLE {$this->tableName} ADD COLUMN signed_defs_json LONGTEXT");
+        } catch (\Throwable $e) {
+            // column may already exist
+        }
+        try {
+            $this->pdo->exec("ALTER TABLE {$this->tableName} ADD COLUMN etag VARCHAR(255)");
+        } catch (\Throwable $e) {
+            // column may already exist
+        }
 
         // Create JWK snapshots table
         $sql = "CREATE TABLE IF NOT EXISTS {$this->jwkTableName} (
@@ -61,20 +75,28 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
     /**
      * @inheritDoc
      */
-    public function saveSnapshot(array $features, ?string $signature = null, ?string $keyId = null, ?int $timestamp = null): void
-    {
+    public function saveSnapshot(
+        array $features,
+        ?string $signature = null,
+        ?string $keyId = null,
+        ?int $timestamp = null,
+        ?string $signedDefsJson = null,
+        ?string $etag = null
+    ): void {
         $id = $this->settings->documentName ?? 'toggly_features';
-        
+
         $featuresJson = json_encode(array_map(fn($f) => $f->toArray(), $features));
 
         $stmt = $this->pdo->prepare("
-            INSERT INTO {$this->tableName} (id, features, signature, key_id, timestamp, updated_at)
-            VALUES (:id, :features, :signature, :key_id, :timestamp, NOW())
+            INSERT INTO {$this->tableName} (id, features, signature, key_id, timestamp, signed_defs_json, etag, updated_at)
+            VALUES (:id, :features, :signature, :key_id, :timestamp, :signed_defs_json, :etag, NOW())
             ON DUPLICATE KEY UPDATE
-                features = :features,
-                signature = :signature,
-                key_id = :key_id,
-                timestamp = :timestamp,
+                features = VALUES(features),
+                signature = VALUES(signature),
+                key_id = VALUES(key_id),
+                timestamp = VALUES(timestamp),
+                signed_defs_json = VALUES(signed_defs_json),
+                etag = VALUES(etag),
                 updated_at = NOW()
         ");
 
@@ -84,6 +106,8 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
             ':signature' => $signature,
             ':key_id' => $keyId,
             ':timestamp' => $timestamp,
+            ':signed_defs_json' => $signedDefsJson,
+            ':etag' => $etag,
         ]);
     }
 
@@ -93,8 +117,8 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
     public function getFeaturesSnapshot(): array
     {
         $id = $this->settings->documentName ?? 'toggly_features';
-        
-        $stmt = $this->pdo->prepare("SELECT features, signature, key_id, timestamp FROM {$this->tableName} WHERE id = :id");
+
+        $stmt = $this->pdo->prepare("SELECT features, signature, key_id, timestamp, signed_defs_json, etag FROM {$this->tableName} WHERE id = :id");
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -104,6 +128,8 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
                 'signature' => null,
                 'keyId' => null,
                 'timestamp' => null,
+                'signedDefsJson' => null,
+                'etag' => null,
             ];
         }
 
@@ -122,6 +148,8 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
             'signature' => $row['signature'] ?? null,
             'keyId' => $row['key_id'] ?? null,
             'timestamp' => $row['timestamp'] !== null ? (int)$row['timestamp'] : null,
+            'signedDefsJson' => $row['signed_defs_json'] ?? null,
+            'etag' => $row['etag'] ?? null,
         ];
     }
 
@@ -131,7 +159,7 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
     public function saveJwkSnapshot(JsonWebKeySet $jwks, int $timestamp): void
     {
         $id = $this->settings->jwkDocumentName ?? 'toggly_jwks';
-        
+
         $jwksJson = json_encode([
             'keys' => array_map(function ($jwk) {
                 return [
@@ -150,8 +178,8 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
             INSERT INTO {$this->jwkTableName} (id, jwks, timestamp, updated_at)
             VALUES (:id, :jwks, :timestamp, NOW())
             ON DUPLICATE KEY UPDATE
-                jwks = :jwks,
-                timestamp = :timestamp,
+                jwks = VALUES(jwks),
+                timestamp = VALUES(timestamp),
                 updated_at = NOW()
         ");
 
@@ -168,7 +196,7 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
     public function getJwkSnapshot(): array
     {
         $id = $this->settings->jwkDocumentName ?? 'toggly_jwks';
-        
+
         $stmt = $this->pdo->prepare("SELECT jwks, timestamp FROM {$this->jwkTableName} WHERE id = :id");
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -192,5 +220,20 @@ class DatabaseSnapshotProvider implements FeatureSnapshotProviderInterface
             'jwks' => $jwks,
             'timestamp' => $row['timestamp'] !== null ? (int)$row['timestamp'] : null,
         ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clear(): void
+    {
+        $featuresId = $this->settings->documentName ?? 'toggly_features';
+        $jwksId = $this->settings->jwkDocumentName ?? 'toggly_jwks';
+
+        $stmt = $this->pdo->prepare("DELETE FROM {$this->tableName} WHERE id = :id");
+        $stmt->execute([':id' => $featuresId]);
+
+        $stmt = $this->pdo->prepare("DELETE FROM {$this->jwkTableName} WHERE id = :id");
+        $stmt->execute([':id' => $jwksId]);
     }
 }

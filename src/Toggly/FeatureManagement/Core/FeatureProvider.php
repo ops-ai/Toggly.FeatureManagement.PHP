@@ -102,6 +102,9 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 $this->logger
             );
             $this->signatureVerifier = new EcdsaSignatureVerifier($this->jwkManager, $this->logger);
+        } else {
+            $this->jwkManager = null;
+            $this->signatureVerifier = null;
         }
 
         // Load snapshot on startup
@@ -142,27 +145,42 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             // Verify signature if using signed definitions
             if ($this->settings->useSignedDefinitions) {
                 if ($snapshot['signature'] === null || $snapshot['keyId'] === null || $snapshot['timestamp'] === null) {
-                    $this->logger->warning('Snapshot is missing required signature fields');
+                    $this->reportError('Snapshot is missing required signature fields');
                     return;
                 }
 
-                try {
-                    $jsonData = json_encode(array_map(fn($f) => $f->toArray(), $features), JSON_UNESCAPED_SLASHES);
-                    $valid = $this->signatureVerifier->verifySnapshot(
-                        $jsonData,
-                        $snapshot['signature'],
-                        $snapshot['keyId'],
-                        $snapshot['timestamp']
-                    );
+                $signedDefsJson = $snapshot['signedDefsJson'] ?? null;
+                if ($signedDefsJson !== null && $signedDefsJson !== '') {
+                    try {
+                        // Verify exact server-signed defs bytes (never re-serialize).
+                        $valid = $this->signatureVerifier->verifySnapshot(
+                            $signedDefsJson,
+                            $snapshot['signature'],
+                            $snapshot['keyId'],
+                            $snapshot['timestamp']
+                        );
 
-                    if (!$valid) {
-                        $this->logger->error('Invalid signature in snapshot');
+                        if (!$valid) {
+                            $this->reportError('Invalid signature in snapshot');
+                            return;
+                        }
+                    } catch (SignatureVerificationException $e) {
+                        $this->reportError('Signature verification failed for snapshot', $e);
                         return;
                     }
-                } catch (SignatureVerificationException $e) {
-                    $this->logger->error('Signature verification failed for snapshot', ['error' => $e->getMessage()]);
-                    return;
+                } else {
+                    $legacyMessage =
+                        'Snapshot is missing signedDefsJson; loaded without cryptographic re-verification. Clear and refresh to upgrade the snapshot.';
+                    $this->logger->warning($legacyMessage);
+                    $this->invokeOnError($legacyMessage, null);
                 }
+            }
+
+            if (!empty($snapshot['etag'])) {
+                $this->httpClient->setLastETag((string)$snapshot['etag']);
+            }
+            if ($snapshot['timestamp'] !== null) {
+                $this->lastDefinitionsTimestamp = (int)$snapshot['timestamp'];
             }
 
             // Load definitions from snapshot
@@ -191,7 +209,34 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             }
             $this->loaded = true;
         } catch (\Exception $e) {
-            $this->logger->error('Error loading from snapshot', ['error' => $e->getMessage()]);
+            $this->reportError('Error loading from snapshot', $e);
+        }
+    }
+
+    /**
+     * Report an error, keep last-known-good definitions, and invoke OnError.
+     */
+    private function reportError(string $message, ?\Throwable $exception = null): void
+    {
+        $this->lastError = $message;
+        $this->lastErrorTime = time();
+        if ($exception !== null) {
+            $this->logger->error($message, ['error' => $exception->getMessage()]);
+        } else {
+            $this->logger->error($message);
+        }
+        $this->invokeOnError($message, $exception);
+    }
+
+    private function invokeOnError(string $message, ?\Throwable $exception): void
+    {
+        if ($this->settings->onError === null) {
+            return;
+        }
+        try {
+            ($this->settings->onError)($message, $exception);
+        } catch (\Throwable $callbackEx) {
+            $this->logger->warning('OnError callback threw', ['error' => $callbackEx->getMessage()]);
         }
     }
 
@@ -295,24 +340,27 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                     );
 
                     if (!$valid) {
-                        $this->logger->error('Invalid signature');
+                        $this->reportError('Invalid signature');
                         return;
                     }
                 } catch (SignatureVerificationException $e) {
-                    $this->logger->error('Signature verification failed', ['error' => $e->getMessage()]);
+                    $this->reportError('Signature verification failed', $e);
                     return;
                 }
 
                 $features = $signedResponse->defs;
                 $this->lastDefinitionsTimestamp = $signedResponse->timestamp;
 
-                // Save snapshot
+                // Save snapshot with exact signed defs bytes
                 if ($this->snapshotProvider !== null) {
+                    $rawDefs = $this->extractSignedDefsFromBody($body);
                     $this->snapshotProvider->saveSnapshot(
                         $features,
                         $signedResponse->signature,
                         $signedResponse->kid,
-                        $signedResponse->timestamp
+                        $signedResponse->timestamp,
+                        $rawDefs,
+                        $this->httpClient->getLastETag()
                     );
                 }
             } else {
@@ -357,9 +405,8 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             // Try to establish WebSocket connection
             $this->tryConnectWebSocket();
         } catch (\Exception $e) {
-            $this->logger->error('Error refreshing features list', ['error' => $e->getMessage()]);
-            $this->lastError = $e->getMessage();
-            $this->lastErrorTime = time();
+            // Keep last-known-good in-memory definitions (LKG); report error.
+            $this->reportError('Error refreshing features list', $e);
         } finally {
             $this->refreshInProgress = false;
         }
@@ -394,7 +441,14 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             }
             $wsUrl = $wsBase . "/{$this->settings->appKey}/ws?" . SdkIdentity::buildQueryString($queryParams);
 
-            $connected = $this->webSocketClient->connect($wsUrl, function () {
+            $connected = $this->webSocketClient->connect($wsUrl, function (bool $forceJwksRefresh = false) {
+                if ($forceJwksRefresh) {
+                    $this->logger->info('WebSocket signing-key-updated: clearing JWKS cache');
+                    if ($this->jwkManager !== null) {
+                        $this->jwkManager->clearCache();
+                    }
+                    $this->httpClient->clearETag();
+                }
                 $this->logger->info('WebSocket update received, refreshing features');
                 $this->refreshFeatures(true);
             });
@@ -522,11 +576,14 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         $this->lastDefinitionsTimestamp = $timestamp > 0 ? $timestamp : $this->lastDefinitionsTimestamp;
 
         if ($this->snapshotProvider !== null) {
+            $rawDefs = $this->extractSignedDefsFromBody($body);
             $this->snapshotProvider->saveSnapshot(
                 $features,
                 $signature !== '' ? $signature : null,
                 $kid !== '' ? $kid : null,
-                $timestamp > 0 ? $timestamp : null
+                $timestamp > 0 ? $timestamp : null,
+                $rawDefs !== '' ? $rawDefs : null,
+                $this->httpClient->getLastETag()
             );
         }
 
@@ -787,6 +844,21 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
     public function shutdown(): void
     {
         $this->webSocketClient->disconnect();
+    }
+
+    /**
+     * Clear persisted feature and JWKS snapshots (when a snapshot provider is configured).
+     * Does not clear in-memory definitions.
+     */
+    public function clearPersistedSnapshots(): void
+    {
+        if ($this->snapshotProvider === null) {
+            return;
+        }
+        $this->snapshotProvider->clear();
+        if ($this->jwkManager !== null) {
+            $this->jwkManager->clearCache();
+        }
     }
 
     /**

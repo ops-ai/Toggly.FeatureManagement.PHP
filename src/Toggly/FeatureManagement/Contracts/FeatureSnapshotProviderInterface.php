@@ -16,12 +16,28 @@ interface FeatureSnapshotProviderInterface
      * @param string|null $signature
      * @param string|null $keyId
      * @param int|null $timestamp
+     * @param string|null $signedDefsJson Exact signed defs JSON from the server (for verify without re-serialize)
+     * @param string|null $etag Definitions revision for conditional fetches
      */
-    public function saveSnapshot(array $features, ?string $signature = null, ?string $keyId = null, ?int $timestamp = null): void;
+    public function saveSnapshot(
+        array $features,
+        ?string $signature = null,
+        ?string $keyId = null,
+        ?int $timestamp = null,
+        ?string $signedDefsJson = null,
+        ?string $etag = null
+    ): void;
 
     /**
      * Get the snapshot of the features
-     * @return array{features: FeatureDefinition[]|null, signature: string|null, keyId: string|null, timestamp: int|null}
+     * @return array{
+     *   features: FeatureDefinition[]|null,
+     *   signature: string|null,
+     *   keyId: string|null,
+     *   timestamp: int|null,
+     *   signedDefsJson: string|null,
+     *   etag: string|null
+     * }
      */
     public function getFeaturesSnapshot(): array;
 
@@ -35,4 +51,9 @@ interface FeatureSnapshotProviderInterface
      * @return array{jwks: JsonWebKeySet|null, timestamp: int|null}
      */
     public function getJwkSnapshot(): array;
+
+    /**
+     * Clear persisted feature and JWKS snapshots.
+     */
+    public function clear(): void;
 }

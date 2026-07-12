@@ -198,6 +198,14 @@ class TogglyHttpClient
     }
 
     /**
+     * Set the stored ETag (e.g. restored from a snapshot).
+     */
+    public function setLastETag(?string $etag): void
+    {
+        $this->lastETag = ($etag !== null && $etag !== '') ? $etag : null;
+    }
+
+    /**
      * Get the last ETag
      */
     public function getLastETag(): ?string

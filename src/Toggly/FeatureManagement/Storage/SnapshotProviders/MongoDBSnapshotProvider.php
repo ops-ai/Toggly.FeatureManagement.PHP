@@ -46,8 +46,14 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
     /**
      * @inheritDoc
      */
-    public function saveSnapshot(array $features, ?string $signature = null, ?string $keyId = null, ?int $timestamp = null): void
-    {
+    public function saveSnapshot(
+        array $features,
+        ?string $signature = null,
+        ?string $keyId = null,
+        ?int $timestamp = null,
+        ?string $signedDefsJson = null,
+        ?string $etag = null
+    ): void {
         $featuresData = array_map(fn($f) => $f->toArray(), $features);
 
         $document = [
@@ -56,6 +62,8 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
             'signature' => $signature,
             'keyId' => $keyId,
             'timestamp' => $timestamp,
+            'signedDefsJson' => $signedDefsJson,
+            'etag' => $etag,
             'updatedAt' => new \MongoDB\BSON\UTCDateTime(),
         ];
 
@@ -79,6 +87,8 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
                 'signature' => null,
                 'keyId' => null,
                 'timestamp' => null,
+                'signedDefsJson' => null,
+                'etag' => null,
             ];
         }
 
@@ -95,6 +105,8 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
             'signature' => $document['signature'] ?? null,
             'keyId' => $document['keyId'] ?? null,
             'timestamp' => $document['timestamp'] ?? null,
+            'signedDefsJson' => $document['signedDefsJson'] ?? null,
+            'etag' => $document['etag'] ?? null,
         ];
     }
 
@@ -158,7 +170,7 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
     }
 
     /**
-     * Clear all snapshots
+     * @inheritDoc
      */
     public function clear(): void
     {

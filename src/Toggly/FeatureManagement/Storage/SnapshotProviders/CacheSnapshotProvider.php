@@ -30,15 +30,23 @@ class CacheSnapshotProvider implements FeatureSnapshotProviderInterface
     /**
      * @inheritDoc
      */
-    public function saveSnapshot(array $features, ?string $signature = null, ?string $keyId = null, ?int $timestamp = null): void
-    {
+    public function saveSnapshot(
+        array $features,
+        ?string $signature = null,
+        ?string $keyId = null,
+        ?int $timestamp = null,
+        ?string $signedDefsJson = null,
+        ?string $etag = null
+    ): void {
         $key = $this->settings->documentName ?? 'toggly:features:snapshot';
-        
+
         $data = [
             'features' => array_map(fn($f) => $f->toArray(), $features),
             'signature' => $signature,
             'keyId' => $keyId,
             'timestamp' => $timestamp,
+            'signedDefsJson' => $signedDefsJson,
+            'etag' => $etag,
         ];
 
         $this->cache->set($key, $data, $this->ttl);
@@ -58,6 +66,8 @@ class CacheSnapshotProvider implements FeatureSnapshotProviderInterface
                 'signature' => null,
                 'keyId' => null,
                 'timestamp' => null,
+                'signedDefsJson' => null,
+                'etag' => null,
             ];
         }
 
@@ -73,6 +83,8 @@ class CacheSnapshotProvider implements FeatureSnapshotProviderInterface
             'signature' => $data['signature'] ?? null,
             'keyId' => $data['keyId'] ?? null,
             'timestamp' => $data['timestamp'] ?? null,
+            'signedDefsJson' => $data['signedDefsJson'] ?? null,
+            'etag' => $data['etag'] ?? null,
         ];
     }
 
@@ -82,7 +94,7 @@ class CacheSnapshotProvider implements FeatureSnapshotProviderInterface
     public function saveJwkSnapshot(JsonWebKeySet $jwks, int $timestamp): void
     {
         $key = $this->settings->jwkDocumentName ?? 'toggly:jwks:snapshot';
-        
+
         $data = [
             'jwks' => [
                 'keys' => array_map(function ($jwk) {
@@ -127,5 +139,16 @@ class CacheSnapshotProvider implements FeatureSnapshotProviderInterface
             'jwks' => $jwks,
             'timestamp' => $data['timestamp'] ?? null,
         ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clear(): void
+    {
+        $featuresKey = $this->settings->documentName ?? 'toggly:features:snapshot';
+        $jwksKey = $this->settings->jwkDocumentName ?? 'toggly:jwks:snapshot';
+        $this->cache->delete($featuresKey);
+        $this->cache->delete($jwksKey);
     }
 }

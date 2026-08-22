@@ -26,13 +26,13 @@ class TogglyHttpClient
         ClientInterface $httpClient,
         RequestFactoryInterface $requestFactory,
         string $baseUrl,
-        string $userAgent = SdkIdentity::userAgent(),
+        ?string $userAgent = null,
         ?LoggerInterface $logger = null
     ) {
         $this->httpClient = $httpClient;
         $this->requestFactory = $requestFactory;
         $this->baseUrl = rtrim($baseUrl, '/') . '/';
-        $this->userAgent = $userAgent;
+        $this->userAgent = $userAgent ?? SdkIdentity::userAgent();
         $this->logger = $logger ?? new NullLogger();
     }
 

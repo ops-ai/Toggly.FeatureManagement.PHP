@@ -76,7 +76,9 @@ jobs:
           coverage: xdebug
 
       - name: Validate composer.json
-        run: composer validate --strict
+        # --no-check-version: the manifest keeps a version field on purpose so
+        # the release version can be resolved from it.
+        run: composer validate --strict --no-check-version
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress

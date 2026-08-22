@@ -1,0 +1,68 @@
+# Dependabot policy for Toggly.FeatureManagement.PHP (OPS-705)
+#
+# This is a published library, not an application. composer.json deliberately
+# declares union ranges (php ^7.4|^8.0|..., psr/* ^1.0|^2.0) to support a broad
+# consumer matrix, so versioning-strategy is `widen`: add the new version to the
+# range instead of raising the floor and silently dropping support.
+#
+# Majors are therefore support-matrix decisions and are ignored. Note that
+# ignore rules also suppress security updates for those versions, so a security
+# fix only available in a new major has to be picked up by hand — which is the
+# right call anyway, since it is a breaking change for consumers.
+#
+# Do not set target-branch here: main is the default branch. Setting
+# target-branch would disable Dependabot security updates for that ecosystem.
+# See https://docs.github.com/code-security/reference/supply-chain-security/dependabot-options-reference
+
+version: 2
+
+updates:
+  - package-ecosystem: composer
+    directory: "/"
+    versioning-strategy: widen
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      composer-patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # The supported PHP range is a published support commitment.
+      - dependency-name: php
+        update-types: ["version-update:semver-major"]
+      # PSR interfaces are declared as unions on purpose; a major bump would
+      # drop consumers still on the older interface package.
+      - dependency-name: "psr/*"
+        update-types: ["version-update:semver-major"]
+      # Laravel majors define which framework versions the integration claims
+      # to support (see the `suggest` block).
+      - dependency-name: "illuminate/*"
+        update-types: ["version-update:semver-major"]
+      # PHPUnit majors require migrating the test suite.
+      - dependency-name: phpunit/phpunit
+        update-types: ["version-update:semver-major"]
+      # Optional storage/transport providers whose majors are API rewrites.
+      - dependency-name: mongodb/mongodb
+        update-types: ["version-update:semver-major"]
+      - dependency-name: textalk/websocket
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"

@@ -49,7 +49,9 @@ jobs:
         run: composer update --prefer-dist --no-progress --no-interaction --prefer-stable
 
       - name: Validate composer.json
-        run: composer validate --strict
+        # --no-check-version: the manifest keeps a version field on purpose so
+        # release.yml can resolve the release version from it.
+        run: composer validate --strict --no-check-version
 
       - name: Check code style
         run: |

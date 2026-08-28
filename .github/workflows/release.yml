@@ -173,7 +173,7 @@ jobs:
             ### Links
 
             - [Packagist](https://packagist.org/packages/toggly/feature-management-php)
-            - [Documentation](https://docs.toggly.io/docs/sdks/php)
+            - [Documentation](https://docs.toggly.io/sdks/php)
           prerelease: ${{ github.event.inputs.prerelease }}
           generate_release_notes: true
         env:

@@ -100,6 +100,7 @@ jobs:
 
       - name: Import GPG key
         id: import_gpg
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -110,14 +111,24 @@ jobs:
 
       - name: Configure git
         run: |
-          git config user.name "${{ steps.import_gpg.outputs.name }}"
-          git config user.email "${{ steps.import_gpg.outputs.email }}"
+          if [ -n "${{ steps.import_gpg.outputs.name }}" ]; then
+            git config user.name "${{ steps.import_gpg.outputs.name }}"
+            git config user.email "${{ steps.import_gpg.outputs.email }}"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            echo "GPG secrets not configured — tags will be unsigned (Packagist still accepts GitHub tags)."
+          fi
 
       - name: Commit version bump
         if: needs.validate.outputs.manifest_changed == 'true'
         run: |
           git add composer.json
-          git commit -S -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
+          if [ -n "${{ steps.import_gpg.outputs.fingerprint }}" ]; then
+            git commit -S -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
+          else
+            git commit -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
+          fi
 
           MAX_RETRIES=3
           RETRY_COUNT=0
@@ -142,8 +153,17 @@ jobs:
 
       - name: Create and push tag
         run: |
-          git tag -s -m "v${{ needs.validate.outputs.version }}" "v${{ needs.validate.outputs.version }}"
-          git push origin "v${{ needs.validate.outputs.version }}"
+          TAG="v${{ needs.validate.outputs.version }}"
+          if git ls-remote --exit-code origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping create"
+          else
+            if [ -n "${{ steps.import_gpg.outputs.fingerprint }}" ]; then
+              git tag -s -m "$TAG" "$TAG"
+            else
+              git tag -a -m "$TAG" "$TAG"
+            fi
+            git push origin "$TAG"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

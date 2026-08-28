@@ -98,9 +98,21 @@ jobs:
           # Prefer a PAT that can push tags; fall back to GITHUB_TOKEN (contents: write).
           token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
 
+      # secrets.* cannot be used directly in `if:` — detect via env in a step.
+      - name: Detect GPG secrets
+        id: gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "${GPG_PRIVATE_KEY}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Import GPG key
         id: import_gpg
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: steps.gpg.outputs.available == 'true'
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -111,7 +123,7 @@ jobs:
 
       - name: Configure git
         run: |
-          if [ -n "${{ steps.import_gpg.outputs.name }}" ]; then
+          if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
             git config user.name "${{ steps.import_gpg.outputs.name }}"
             git config user.email "${{ steps.import_gpg.outputs.email }}"
           else
@@ -124,7 +136,7 @@ jobs:
         if: needs.validate.outputs.manifest_changed == 'true'
         run: |
           git add composer.json
-          if [ -n "${{ steps.import_gpg.outputs.fingerprint }}" ]; then
+          if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
             git commit -S -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
           else
             git commit -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
@@ -157,7 +169,7 @@ jobs:
           if git ls-remote --exit-code origin "refs/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag $TAG already exists — skipping create"
           else
-            if [ -n "${{ steps.import_gpg.outputs.fingerprint }}" ]; then
+            if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
               git tag -s -m "$TAG" "$TAG"
             else
               git tag -a -m "$TAG" "$TAG"

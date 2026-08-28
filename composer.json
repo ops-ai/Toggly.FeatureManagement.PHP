@@ -15,15 +15,17 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "opsAI LLC",
-            "email": "support@toggly.io"
+            "name": "Toggly",
+            "email": "support@toggly.io",
+            "homepage": "https://toggly.io",
+            "role": "Developer"
         }
     ],
-    "homepage": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP",
+    "homepage": "https://docs.toggly.io/sdks/php",
     "support": {
         "issues": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP/issues",
         "source": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP",
-        "docs": "https://docs.toggly.io/docs/sdks/php"
+        "docs": "https://docs.toggly.io/sdks/php"
     },
     "require": {
         "php": "^7.4|^8.0|^8.1|^8.2|^8.3",

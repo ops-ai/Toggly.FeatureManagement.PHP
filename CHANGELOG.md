@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-07-11
 
+### Changed
+- Public Packagist metadata: author `Toggly <support@toggly.io>`, docs homepage, and support URLs.
+
 ### Added
 - Snapshot providers persist exact signed `defs` JSON (`signedDefsJson`) and ETag
   so verification uses raw server bytes (no `json_encode` re-serialize on load).

@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\Auth;
 use Toggly\FeatureManagement\Models\FeatureFilter;
 
 /**
- * User claims filter for Laravel
+ * Legacy Laravel helper — not used by core FeatureManager evaluation.
+ *
+ * @deprecated Use core FeatureManager with EvalContext.claims instead.
  */
 class UserClaimsFilter
 {

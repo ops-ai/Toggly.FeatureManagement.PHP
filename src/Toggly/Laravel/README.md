@@ -201,3 +201,13 @@ class MyContextProvider implements FeatureContextProviderInterface
 // Register in service provider
 $this->app->singleton(FeatureContextProviderInterface::class, MyContextProvider::class);
 ```
+
+## Legacy filter classes
+
+Classes under `src/Toggly/Laravel/Filters/` are **legacy** and are not wired into
+core evaluation. Segment filters (`BrowserFamily`, `Country`, `OS`, …) and
+`UserClaims` are implemented in
+`Toggly\FeatureManagement\Core\FeatureManager` for filter-parity. Prefer
+passing an EvalContext array (`identity`, `groups`, `claims`, `request`) to
+`FeatureManager::isEnabled` / `evaluateDefinition`, optionally via
+`HttpRequestMapper` for HTTP headers.

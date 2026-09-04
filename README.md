@@ -258,6 +258,37 @@ class MyContextProvider implements FeatureContextProviderInterface
 }
 ```
 
+## Evaluation context (filter parity)
+
+Pass an EvalContext-shaped array to `FeatureManager::isEnabled` /
+`evaluateDefinition`:
+
+```php
+$enabled = $featureManager->isEnabled('my-feature', [
+    'identity' => (string) $user->id,
+    'groups' => ['beta'],
+    'claims' => ['role' => 'admin'],
+    'request' => [
+        'userAgent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+        'acceptLanguage' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null,
+        'country' => null,
+    ],
+]);
+
+// Or map headers (country: cf-ipcountry → x-vercel-ip-country → cloudfront-viewer-country)
+use Toggly\FeatureManagement\Core\HttpRequestMapper;
+
+$context = HttpRequestMapper::mergeIntoContext($headers, [
+    'identity' => 'u',
+    'groups' => ['beta'],
+]);
+```
+
+Segment filters (`BrowserFamily`, `BrowserLanguage`, `Country`, `DeviceType`,
+`OS` / `OperatingSystem`) and `UserClaims` are evaluated in **core**
+`FeatureManager`. Classes under `src/Toggly/Laravel/Filters/` are legacy
+helpers and are not the evaluation path.
+
 ## Requirements
 
 - PHP 7.4 or higher (8.1+ recommended)
@@ -281,13 +312,14 @@ class MyContextProvider implements FeatureContextProviderInterface
 The library follows a modular architecture:
 
 - **Core Library**: Framework-agnostic core functionality
-- **Laravel Integration**: Service provider, facade, middleware, and filters
+- **Laravel Integration**: Service provider, facade, and middleware (Laravel `Filters/` classes are legacy; core `FeatureManager` owns filter evaluation)
 - **WordPress Plugin**: Full plugin with admin interface
 
 ### Core Components
 
 - `FeatureProvider`: Fetches and manages feature definitions
-- `FeatureManager`: Evaluates features with stats tracking
+- `FeatureManager`: Evaluates features (including filter-parity segment / UserClaims filters) with stats tracking
+- `HttpRequestMapper`: Maps HTTP headers into EvalContext `request`
 - `FeatureStateService`: Manages state change notifications
 - `UsageStatsProvider`: Collects and sends usage statistics
 - `MetricsService`: Collects custom metrics for experiments

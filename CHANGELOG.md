@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-04
+
+### Added
+- Core filter-parity evaluation for segment filters (`BrowserFamily`,
+  `BrowserLanguage`, `Country` / `CountryFamily`, `DeviceType`, `OS` /
+  `OperatingSystem`) and `UserClaims` in `FeatureManager`.
+- `HttpRequestMapper` mapping `user-agent`, `accept-language`, and country
+  headers (`cf-ipcountry` → `x-vercel-ip-country` →
+  `cloudfront-viewer-country`) into EvalContext `request`.
+- Microsoft.* aliases for `Percentage`, `TimeWindow`, and `Targeting`.
+- Golden fixture PHPUnit coverage against shared
+  `docs/filter-parity/fixtures` (via sibling path or
+  `TOGGLY_FILTER_PARITY_FIXTURES`).
+
+### Changed
+- Sticky percentage hashing now uses Definitions-aligned SHA-256
+  (`featureKey + "\n" + userId`, little-endian uint32 / `0xFFFFFFFF` × 100).
+  Cohort membership for partial rollouts may differ from the previous crc32
+  buckets — expect sticky cohort remapping when upgrading from 0.2.x.
+- Percentage and segment gates fail closed when percentage is missing or ≤ 0.
+- Unknown filter names fail closed.
+- Laravel classes under `src/Toggly/Laravel/Filters/` are marked legacy;
+  evaluation goes through core `FeatureManager`, not those helpers.
+
+### Fixed
+- Removed invalid duplicate `recordUsageWithContext` signature from
+  `UsageStatsProviderInterface` (PHP cannot declare the same method twice;
+  only the three-argument form used by `FeatureManager` remains).
+
 ## [0.2.0] - 2026-07-11
 
 ### Changed

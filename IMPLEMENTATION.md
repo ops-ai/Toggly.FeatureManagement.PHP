@@ -68,13 +68,11 @@ The library is organized into three main parts:
 - ✅ `HttpFeatureContextProvider`: HTTP context provider using Laravel's Request
 - ✅ Configuration file: `config/toggly.php`
 
-### Filters
-- ✅ `BrowserFamilyFilter`: Browser family targeting
-- ✅ `BrowserLanguageFilter`: Browser language targeting
-- ✅ `CountryFilter`: Country-based targeting (placeholder for geolocation)
-- ✅ `DeviceTypeFilter`: Device type detection (Mobile, Tablet, Desktop)
-- ✅ `OSFilter`: Operating system detection
-- ✅ `UserClaimsFilter`: User claims/attributes targeting
+### Filters (legacy — not the evaluation path)
+- ⚠️ `BrowserFamilyFilter`, `BrowserLanguageFilter`, `CountryFilter`,
+  `DeviceTypeFilter`, `OSFilter`, `UserClaimsFilter` under
+  `src/Toggly/Laravel/Filters/` are legacy helpers. Core evaluation lives in
+  `FeatureManager` (filter-parity contract).
 
 ## WordPress Integration
 

@@ -92,7 +92,7 @@ class FeatureManager
             return false;
         }
 
-        $featureKey = $definition->featureKey ?? '';
+        $featureKey = $definition->featureKey;
         $results = [];
 
         foreach ($definition->filters as $filter) {

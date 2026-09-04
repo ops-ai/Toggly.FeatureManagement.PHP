@@ -6,7 +6,12 @@ use Illuminate\Http\Request;
 use Toggly\FeatureManagement\Models\FeatureFilter;
 
 /**
- * Browser family filter for Laravel
+ * Legacy Laravel helper — not used by core FeatureManager evaluation.
+ *
+ * Segment filters (BrowserFamily, etc.) are evaluated in
+ * {@see \Toggly\FeatureManagement\Core\FeatureManager} for filter-parity.
+ *
+ * @deprecated Use core FeatureManager with EvalContext.request.userAgent instead.
  */
 class BrowserFamilyFilter
 {

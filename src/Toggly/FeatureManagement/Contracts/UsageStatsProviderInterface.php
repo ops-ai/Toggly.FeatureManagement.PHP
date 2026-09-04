@@ -27,11 +27,4 @@ interface UsageStatsProviderInterface
      * @param string $featureKey Name/key of the feature
      */
     public function recordUsage(string $featureKey): void;
-
-    /**
-     * Record a feature being used with context
-     * @param string $featureKey Name/key of the feature
-     * @param mixed $context Custom context
-     */
-    public function recordUsageWithContext(string $featureKey, $context): void;
 }

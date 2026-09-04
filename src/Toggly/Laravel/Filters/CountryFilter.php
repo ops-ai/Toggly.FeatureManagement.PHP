@@ -6,7 +6,9 @@ use Illuminate\Http\Request;
 use Toggly\FeatureManagement\Models\FeatureFilter;
 
 /**
- * Country filter for Laravel (based on IP geolocation)
+ * Legacy Laravel helper — not used by core FeatureManager evaluation.
+ *
+ * @deprecated Use core FeatureManager + HttpRequestMapper / request.country instead.
  */
 class CountryFilter
 {

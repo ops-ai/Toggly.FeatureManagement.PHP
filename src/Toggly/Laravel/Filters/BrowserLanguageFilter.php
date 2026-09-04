@@ -6,7 +6,9 @@ use Illuminate\Http\Request;
 use Toggly\FeatureManagement\Models\FeatureFilter;
 
 /**
- * Browser language filter for Laravel
+ * Legacy Laravel helper — not used by core FeatureManager evaluation.
+ *
+ * @deprecated Use core FeatureManager with EvalContext.request.acceptLanguage instead.
  */
 class BrowserLanguageFilter
 {

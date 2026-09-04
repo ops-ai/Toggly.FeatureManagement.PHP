@@ -10,7 +10,7 @@ class FeatureDefinition
     /**
      * Unique key of feature
      */
-    public string $featureKey;
+    public string $featureKey = '';
 
     /**
      * List of filters to be checked to determine if feature is enabled

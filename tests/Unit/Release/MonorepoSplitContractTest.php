@@ -63,6 +63,25 @@ class MonorepoSplitContractTest extends TestCase
         $this->assertStringNotContainsString('packages/feature-management-php', $yml);
     }
 
+    public function testReleaseFailsClosedBeforeTagWithoutReleasePushToken(): void
+    {
+        $yml = file_get_contents($this->repoRoot() . '/.github/workflows/release.yml');
+        $this->assertNotFalse($yml);
+
+        $requirePos = strpos($yml, 'Require RELEASE_PUSH_TOKEN before Packagist-visible tag');
+        $tagPos = strpos($yml, 'Create and push tag');
+        $this->assertNotFalse($requirePos);
+        $this->assertNotFalse($tagPos);
+        $this->assertLessThan($tagPos, $requirePos, 'Token gate must run before Create and push tag');
+
+        $this->assertStringNotContainsString(
+            'secrets.RELEASE_PUSH_TOKEN || github.token',
+            $yml,
+            'Must not fall back to github.token for tag or mirror push'
+        );
+        $this->assertStringNotContainsString('continue-on-error: true', $yml);
+    }
+
     public function testCorePackageDirectoryWasRemoved(): void
     {
         $this->assertDirectoryDoesNotExist($this->repoRoot() . '/packages/feature-management-php');

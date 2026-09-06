@@ -89,21 +89,32 @@ jobs:
 
       - name: Run tests
         run: vendor/bin/phpunit
-        continue-on-error: true
 
   release:
     needs: [build-and-test, validate]
     if: needs.validate.outputs.action == 'publish'
     runs-on: ubuntu-latest
     steps:
+      # Fail closed before any Packagist-visible core tag. secrets.* cannot be
+      # used directly in `if:` — detect via env in a step.
+      - name: Require RELEASE_PUSH_TOKEN before Packagist-visible tag
+        env:
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        run: |
+          if [ -z "${RELEASE_PUSH_TOKEN}" ]; then
+            echo "::error::RELEASE_PUSH_TOKEN is required before creating a release tag."
+            echo "Without it, core could publish to Packagist while Laravel/WordPress mirrors stay empty."
+            echo "Do not fall back to GITHUB_TOKEN for tag push when this release includes mirror splits."
+            echo "Human gate: PAT with repo push on the monorepo + ops-ai/Toggly.FeatureManagement.PHP.Laravel and ops-ai/Toggly.FeatureManagement.PHP.Wordpress; store as RELEASE_PUSH_TOKEN."
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          # Prefer a PAT that can push tags + cross-repo mirror splits.
-          # GITHUB_TOKEN cannot push to sibling repos; RELEASE_PUSH_TOKEN must
-          # have `repo` scope on ops-ai/Toggly.FeatureManagement.PHP.Laravel and
-          # ops-ai/Toggly.FeatureManagement.PHP.Wordpress (human gate).
-          token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
+          # No github.token fallback — RELEASE_PUSH_TOKEN is mandatory for tag
+          # push and cross-repo mirror splits (see require step above).
+          token: ${{ secrets.RELEASE_PUSH_TOKEN }}
 
       # secrets.* cannot be used directly in `if:` — detect via env in a step.
       - name: Detect GPG secrets
@@ -273,19 +284,9 @@ jobs:
         with:
           fetch-depth: 0
           ref: v${{ needs.validate.outputs.version }}
-          # Cross-repo push requires RELEASE_PUSH_TOKEN (PAT with repo scope on
-          # both mirror repos). github.token alone cannot push to siblings.
-          token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
-
-      - name: Require RELEASE_PUSH_TOKEN for mirror push
-        env:
-          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
-        run: |
-          if [ -z "${RELEASE_PUSH_TOKEN}" ]; then
-            echo "::error::RELEASE_PUSH_TOKEN is required to push subtree splits to mirror repos (GITHUB_TOKEN cannot push cross-repo)."
-            echo "Human gate: create/update a PAT with repo scope for ops-ai/Toggly.FeatureManagement.PHP.Laravel and ops-ai/Toggly.FeatureManagement.PHP.Wordpress, store as RELEASE_PUSH_TOKEN."
-            exit 1
-          fi
+          # RELEASE_PUSH_TOKEN already required in the release job before tag;
+          # still use it exclusively here (no github.token fallback).
+          token: ${{ secrets.RELEASE_PUSH_TOKEN }}
 
       - name: Split package directory to mirror
         uses: danharrin/monorepo-split-github-action@v2.4.0

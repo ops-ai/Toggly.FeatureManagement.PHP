@@ -38,9 +38,12 @@ Releases are handled by the **PHP SDK - Release** GitHub Actions workflow.
 
 Do **not** invent new secret storage. Reuse `RELEASE_PUSH_TOKEN`.
 
-### Human gate — `RELEASE_PUSH_TOKEN` for mirrors
+### Human gate — `RELEASE_PUSH_TOKEN` (required before any tag)
 
-`GITHUB_TOKEN` cannot push to sibling repositories. For the `split-mirrors` job:
+`GITHUB_TOKEN` cannot push to sibling repositories. The release workflow **fails
+closed** in the `release` job **before** creating a Packagist-visible core tag
+if `RELEASE_PUSH_TOKEN` is missing. There is **no** `github.token` fallback for
+tag push or mirror split.
 
 1. Ensure `RELEASE_PUSH_TOKEN` is a PAT (or fine-grained token) with **push**
    access to:
@@ -48,11 +51,10 @@ Do **not** invent new secret storage. Reuse `RELEASE_PUSH_TOKEN`.
    - `ops-ai/Toggly.FeatureManagement.PHP.Laravel`
    - `ops-ai/Toggly.FeatureManagement.PHP.Wordpress`
 2. Classic PAT: `repo` scope on the ops-ai org (or those three repos).
-3. Store it as the existing repo secret `RELEASE_PUSH_TOKEN` (same secret used
-   for monorepo tag push).
+3. Store it as the existing repo secret `RELEASE_PUSH_TOKEN`.
 
-Without that token, monorepo tagging may still work via `github.token`, but
-mirror splits will fail the explicit `RELEASE_PUSH_TOKEN` check.
+Without that token, the workflow exits before `v*` is pushed — core cannot
+publish to Packagist ahead of empty Laravel/WordPress mirrors.
 
 ## Packagist Setup
 

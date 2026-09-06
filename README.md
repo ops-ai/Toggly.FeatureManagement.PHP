@@ -41,6 +41,10 @@ composer require toggly/laravel
 composer require toggly/wordpress
 ```
 
+`toggly/laravel` and `toggly/wordpress` are published from mirror repos after
+the first `v1.0.0` release split + Packagist submit. Until then, use this
+monorepo path repositories (see root `composer.json`) or wait for that release.
+
 For non-Composer WordPress installs, copy or symlink the `toggly/wordpress`
 package directory to `wp-content/plugins/toggly/` so WordPress loads `toggly.php`.
 

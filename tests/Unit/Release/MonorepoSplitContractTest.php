@@ -61,6 +61,7 @@ class MonorepoSplitContractTest extends TestCase
         $this->assertStringContainsString('local_path: wordpress', $yml);
         $this->assertStringContainsString('RELEASE_PUSH_TOKEN', $yml);
         $this->assertStringNotContainsString('packages/feature-management-php', $yml);
+        $this->assertStringContainsString('Ensure mirror has main branch', $yml);
     }
 
     public function testReleaseFailsClosedBeforeTagWithoutReleasePushToken(): void
@@ -80,6 +81,24 @@ class MonorepoSplitContractTest extends TestCase
             'Must not fall back to github.token for tag or mirror push'
         );
         $this->assertStringNotContainsString('continue-on-error: true', $yml);
+    }
+
+    public function testSplitBootstrapsEmptyMirrorBeforeMonorepoSplitAction(): void
+    {
+        $yml = file_get_contents($this->repoRoot() . '/.github/workflows/release.yml');
+        $this->assertNotFalse($yml);
+
+        $bootstrapPos = strpos($yml, 'Ensure mirror has main branch');
+        $splitPos = strpos($yml, 'Split package directory to mirror');
+        $this->assertNotFalse($bootstrapPos);
+        $this->assertNotFalse($splitPos);
+        $this->assertLessThan(
+            $splitPos,
+            $bootstrapPos,
+            'Empty-mirror bootstrap must run before danharrin/monorepo-split'
+        );
+        $this->assertStringContainsString('git/ref/heads/main', $yml);
+        $this->assertStringContainsString('Initialize mirror repository', $yml);
     }
 
     public function testCorePackageDirectoryWasRemoved(): void

@@ -137,19 +137,25 @@ class ServiceProvider extends BaseServiceProvider
         // Register Blade directives
         $this->registerBladeDirectives();
 
-        // Note: Scheduling should be done in app/Console/Kernel.php
-        // Add these to your schedule method:
+        // Note: Periodic flush is host-driven (no in-process timer). Schedule in
+        // app/Console/Kernel.php or routes/console.php:
         // $schedule->call(function () {
         //     app(FeatureProvider::class)->refreshFeatures();
         // })->everyFiveMinutes();
-        // 
+        //
         // $schedule->call(function () {
         //     app(UsageStatsProvider::class)->sendStats();
         // })->everyMinute();
-        // 
+        //
         // $schedule->call(function () {
         //     app(MetricsService::class)->sendMetrics();
         // })->everyMinute();
+        //
+        // Optional Octane / long-worker terminate flush:
+        // app()->terminating(fn () => [
+        //     app(UsageStatsProvider::class)->flush(),
+        //     app(MetricsService::class)->flush(),
+        // ]);
     }
 
     /**

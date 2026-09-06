@@ -6,11 +6,21 @@ use Toggly\FeatureManagement\Config\TogglySettings;
 use Toggly\FeatureManagement\Contracts\FeatureContextProviderInterface;
 use Toggly\FeatureManagement\Contracts\UsageStatsProviderInterface;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\SdkIdentity;
+use Toggly\FeatureManagement\Telemetry\GrpcClients;
+use Toggly\FeatureManagement\Telemetry\IdentityHasher;
+use Toggly\FeatureManagement\Telemetry\UsageGrpcClient;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * Collects and sends feature usage statistics to Toggly
+ * Collects and sends feature usage statistics to Toggly.
+ *
+ * Prefers native gRPC {@code Usage.SendStats} when ext-grpc + google/protobuf are
+ * available; otherwise soft-fails to the gateway-accepted HTTPS JSON path
+ * ({@code api/usage/stats}). Wire payloads use {@code variantStats} (not legacy
+ * enabled/disabled scalars). Periodic flush is host-driven (Laravel schedule /
+ * WP-Cron); {@see flush()} / destructor provide best-effort shutdown flush.
  */
 class UsageStatsProvider implements UsageStatsProviderInterface
 {
@@ -18,77 +28,86 @@ class UsageStatsProvider implements UsageStatsProviderInterface
     private TogglyHttpClient $httpClient;
     private ?FeatureContextProviderInterface $contextProvider;
     private LoggerInterface $logger;
-
-    /**
-     * @var array<string, array<string, int>> Statistics: [featureKey][statType] => count
-     */
-    private array $stats = [];
-
-    /**
-     * @var array<string, array<int>> Unique user IDs per feature (enabled)
-     */
-    private array $uniqueUsageEnabled = [];
-
-    /**
-     * @var array<string, array<int>> Unique user IDs per feature (disabled)
-     */
-    private array $uniqueUsageDisabled = [];
-
-    /**
-     * @var array<string, array<int>> Unique user IDs per feature (used)
-     */
-    private array $uniqueUsageUsed = [];
-
-    /**
-     * @var array<string, array<int>> Unique user hashes for monthly tracking (USED)
-     */
-    private array $uniqueUserHashes = [];
-
-    /**
-     * @var array<string, array<int>> Unique viewed user hashes for monthly tracking (VIEWED)
-     */
-    private array $uniqueViewedUserHashes = [];
-
-    /**
-     * @var array<int> Application-level unique user hashes
-     */
-    private array $applicationUniqueUserHashes = [];
+    private ?UsageGrpcClient $grpcClient;
+    private ?GrpcClients $ownedGrpcClients = null;
+    private int $processStartTime;
 
     private const MAX_UNIQUE_USER_HASHES_PER_FEATURE = 10000;
     private const MAX_APPLICATION_UNIQUE_USER_HASHES = 10000;
 
-    private const STAT_TYPE_ENABLED = 0;
-    private const STAT_TYPE_DISABLED = 1;
-    private const STAT_TYPE_UNIQUE_REQUEST_ENABLED = 2;
-    private const STAT_TYPE_UNIQUE_REQUEST_DISABLED = 3;
-    private const STAT_TYPE_USED = 4;
+    /** @var array<string, array<string, array{checkCount: int, requestCount: int, usedCount: int, viewedCount: int}>> */
+    private array $variantStats = [];
+
+    /** @var array<string, array<int, true>> */
+    private array $uniqueUsageEnabled = [];
+
+    /** @var array<string, array<int, true>> */
+    private array $uniqueUsageDisabled = [];
+
+    /** @var array<string, array<int, true>> */
+    private array $uniqueUsageUsed = [];
+
+    /** @var array<string, array<int, true>> */
+    private array $uniqueUserHashes = [];
+
+    /** @var array<string, array<int, true>> */
+    private array $uniqueViewedUserHashes = [];
+
+    /** @var array<int, true> */
+    private array $applicationUniqueUserHashes = [];
 
     private bool $sendInProgress = false;
+    private bool $shutdownRegistered = false;
     private ?int $lastSend = null;
 
     public function __construct(
         TogglySettings $settings,
         TogglyHttpClient $httpClient,
         ?FeatureContextProviderInterface $contextProvider = null,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?UsageGrpcClient $grpcClient = null
     ) {
         $this->settings = $settings;
         $this->httpClient = $httpClient;
         $this->contextProvider = $contextProvider;
         $this->logger = $logger ?? new NullLogger();
+        $this->processStartTime = time();
 
-        // Start send timer (in production, use proper scheduler)
-        $this->startSendTimer();
+        if ($grpcClient !== null) {
+            $this->grpcClient = $grpcClient;
+        } else {
+            $clients = GrpcClients::create(
+                $this->resolveMetricsBaseUrl(),
+                SdkIdentity::userAgent(),
+                $this->logger
+            );
+            $this->ownedGrpcClients = $clients;
+            $this->grpcClient = $clients !== null ? $clients->usage() : null;
+            if ($clients === null && !GrpcClients::isAvailable()) {
+                $this->logger->debug(
+                    'Usage gRPC unavailable (need ext-grpc + google/protobuf); using HTTPS JSON fallback'
+                );
+            }
+        }
+
+        $this->registerShutdownFlush();
     }
 
-    /**
-     * Start the send timer
-     */
-    private function startSendTimer(): void
+    public function __destruct()
     {
-        // In a real implementation, you'd use a proper scheduler
-        // In Laravel, this would be handled by a scheduled task
-        // In WordPress, this would be handled by WP Cron
+        try {
+            $this->flush();
+        } catch (\Throwable $e) {
+            // Best-effort shutdown flush
+        }
+        if ($this->ownedGrpcClients !== null) {
+            try {
+                $this->ownedGrpcClients->close();
+            } catch (\Throwable $e) {
+                // Best-effort
+            }
+            $this->ownedGrpcClients = null;
+        }
     }
 
     /**
@@ -96,33 +115,30 @@ class UsageStatsProvider implements UsageStatsProviderInterface
      */
     public function recordCheck(string $featureKey, bool $allowed): void
     {
-        $statType = $allowed ? self::STAT_TYPE_ENABLED : self::STAT_TYPE_DISABLED;
-        $this->incrementStat($featureKey, $statType);
+        $variant = $allowed ? 'enabled' : 'disabled';
+        $uniqueRequest = false;
 
         if ($this->contextProvider !== null) {
             $accessed = $this->contextProvider->accessedInRequest($featureKey);
             if (!$accessed) {
-                $uniqueRequestType = $allowed ? self::STAT_TYPE_UNIQUE_REQUEST_ENABLED : self::STAT_TYPE_UNIQUE_REQUEST_DISABLED;
-                $this->incrementStat($featureKey, $uniqueRequestType);
+                $uniqueRequest = true;
             }
+        }
 
+        $this->bumpVariant($featureKey, $variant, 'checkCount');
+        if ($uniqueRequest) {
+            $this->bumpVariant($featureKey, $variant, 'requestCount');
+        }
+
+        if ($this->contextProvider !== null) {
             $identifier = $this->contextProvider->getContextIdentifier();
-            if ($identifier !== null) {
-                $hash = $this->getDeterministicHashCode($identifier);
-                $map = $allowed ? $this->uniqueUsageEnabled : $this->uniqueUsageDisabled;
-                if (!isset($map[$featureKey])) {
-                    $map[$featureKey] = [];
-                }
-                if (!in_array($hash, $map[$featureKey], true)) {
-                    $map[$featureKey][] = $hash;
-                }
+            if ($identifier !== null && $identifier !== '') {
+                $hash = IdentityHasher::hashIdentity($identifier);
                 if ($allowed) {
-                    $this->uniqueUsageEnabled = $map;
+                    $this->uniqueUsageEnabled[$featureKey][$hash] = true;
                 } else {
-                    $this->uniqueUsageDisabled = $map;
+                    $this->uniqueUsageDisabled[$featureKey][$hash] = true;
                 }
-
-                // Track application-level unique user
                 $this->recordApplicationUniqueUserId($identifier);
             }
         }
@@ -141,125 +157,55 @@ class UsageStatsProvider implements UsageStatsProviderInterface
      */
     public function recordUsage(string $featureKey): void
     {
-        $this->incrementStat($featureKey, self::STAT_TYPE_USED);
+        $this->bumpVariant($featureKey, 'enabled', 'usedCount');
 
         if ($this->contextProvider !== null) {
             $identifier = $this->contextProvider->getContextIdentifier();
-            if ($identifier !== null) {
-                $hash = $this->getDeterministicHashCode($identifier);
-                if (!isset($this->uniqueUsageUsed[$featureKey])) {
-                    $this->uniqueUsageUsed[$featureKey] = [];
-                }
-                if (!in_array($hash, $this->uniqueUsageUsed[$featureKey], true)) {
-                    $this->uniqueUsageUsed[$featureKey][] = $hash;
-                }
-
-                // Track feature-level unique user
+            if ($identifier !== null && $identifier !== '') {
+                $hash = IdentityHasher::hashIdentity($identifier);
+                $this->uniqueUsageUsed[$featureKey][$hash] = true;
                 $this->recordUniqueUserId($featureKey, $identifier);
-
-                // Track application-level unique user
                 $this->recordApplicationUniqueUserId($identifier);
             }
         }
     }
 
     /**
-     * Increment a statistic
+     * Record a feature being viewed / rendered.
      */
-    private function incrementStat(string $featureKey, int $statType): void
+    public function recordView(string $featureKey): void
     {
-        if (!isset($this->stats[$featureKey])) {
-            $this->stats[$featureKey] = [];
-        }
-        if (!isset($this->stats[$featureKey][$statType])) {
-            $this->stats[$featureKey][$statType] = 0;
-        }
-        $this->stats[$featureKey][$statType]++;
-    }
+        $this->bumpVariant($featureKey, 'enabled', 'viewedCount');
 
-    /**
-     * Record unique user ID for a feature (USED tracking)
-     */
-    private function recordUniqueUserId(string $featureKey, string $userId): void
-    {
-        if (empty($featureKey) || empty($userId)) {
-            return;
-        }
-
-        $hash = $this->getDeterministicHashCode($userId);
-        if (!isset($this->uniqueUserHashes[$featureKey])) {
-            $this->uniqueUserHashes[$featureKey] = [];
-        }
-
-        if (count($this->uniqueUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE) {
-            $this->logger->warning("Unique user hash limit reached for feature", ['feature' => $featureKey]);
-        }
-
-        if (!in_array($hash, $this->uniqueUserHashes[$featureKey], true)) {
-            $this->uniqueUserHashes[$featureKey][] = $hash;
+        if ($this->contextProvider !== null) {
+            $identifier = $this->contextProvider->getContextIdentifier();
+            if ($identifier !== null && $identifier !== '') {
+                $this->recordUniqueViewedUserId($featureKey, $identifier);
+                $this->recordApplicationUniqueUserId($identifier);
+            }
         }
     }
 
     /**
-     * Record unique viewed user ID for a feature (VIEWED tracking)
+     * Best-effort flush (alias of {@see sendStats()}).
      */
-    private function recordUniqueViewedUserId(string $featureKey, string $userId): void
+    public function flush(): void
     {
-        if (empty($featureKey) || empty($userId)) {
-            return;
-        }
-
-        $hash = $this->getDeterministicHashCode($userId);
-        if (!isset($this->uniqueViewedUserHashes[$featureKey])) {
-            $this->uniqueViewedUserHashes[$featureKey] = [];
-        }
-
-        if (count($this->uniqueViewedUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE) {
-            $this->logger->warning("Unique viewed user hash limit reached for feature", ['feature' => $featureKey]);
-            return;
-        }
-
-        if (!in_array($hash, $this->uniqueViewedUserHashes[$featureKey], true)) {
-            $this->uniqueViewedUserHashes[$featureKey][] = $hash;
-        }
+        $this->sendStats();
     }
 
     /**
-     * Record application-level unique user ID
+     * Build the current FeatureStat-shaped payload without clearing (tests).
+     *
+     * @return array<string, mixed>|null
      */
-    private function recordApplicationUniqueUserId(string $userId): void
+    public function peekPayload(): ?array
     {
-        if (empty($userId)) {
-            return;
-        }
-
-        $hash = $this->getDeterministicHashCode($userId);
-
-        if (count($this->applicationUniqueUserHashes) >= self::MAX_APPLICATION_UNIQUE_USER_HASHES) {
-            $this->logger->warning("Application-level unique user hash limit reached");
-        }
-
-        if (!in_array($hash, $this->applicationUniqueUserHashes, true)) {
-            $this->applicationUniqueUserHashes[] = $hash;
-        }
+        return $this->buildPayload(false);
     }
 
     /**
-     * Get deterministic hash code for a string
-     */
-    private function getDeterministicHashCode(string $str): int
-    {
-        // Use DJB2-like hash algorithm for consistency
-        $hash = 5381;
-        $len = strlen($str);
-        for ($i = 0; $i < $len; $i++) {
-            $hash = (($hash << 5) + $hash) + ord($str[$i]);
-        }
-        return $hash;
-    }
-
-    /**
-     * Send statistics to Toggly
+     * Send statistics to Toggly (single-flight).
      */
     public function sendStats(): void
     {
@@ -268,7 +214,15 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             return;
         }
 
-        if (empty($this->stats) && empty($this->uniqueUserHashes) && empty($this->uniqueViewedUserHashes) && empty($this->applicationUniqueUserHashes)) {
+        // Snapshot unique-usage hash sets before buildPayload clears them.
+        // Wire payloads only carry counts for these maps, so restore must use
+        // in-memory snapshots (same idea as .NET ConcurrentHashSet clones).
+        $uniqueUsageEnabledSnapshot = $this->uniqueUsageEnabled;
+        $uniqueUsageDisabledSnapshot = $this->uniqueUsageDisabled;
+        $uniqueUsageUsedSnapshot = $this->uniqueUsageUsed;
+
+        $payload = $this->buildPayload(true);
+        if ($payload === null) {
             $this->logger->debug('No stats to send');
             return;
         }
@@ -276,92 +230,282 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         $this->sendInProgress = true;
 
         try {
-            // Clone stats to send
-            $statsToSend = $this->stats;
-            $uniqueEnabledToSend = $this->uniqueUsageEnabled;
-            $uniqueDisabledToSend = $this->uniqueUsageDisabled;
-            $uniqueUsedToSend = $this->uniqueUsageUsed;
-            $uniqueHashesToSend = $this->uniqueUserHashes;
-            $uniqueViewedHashesToSend = $this->uniqueViewedUserHashes;
-            $appHashesToSend = $this->applicationUniqueUserHashes;
+            if ($this->grpcClient !== null) {
+                $this->grpcClient->sendStats($payload);
+            } else {
+                $this->httpClient->post('api/usage/stats', $this->toHttpJsonPayload($payload));
+            }
+            $this->lastSend = time();
+            $this->logger->debug('Statistics sent successfully', [
+                'transport' => $this->grpcClient !== null ? 'grpc' : 'http',
+            ]);
+        } catch (\Throwable $e) {
+            $this->restoreFromPayload($payload);
+            $this->restoreUniqueUsageMaps(
+                $uniqueUsageEnabledSnapshot,
+                $uniqueUsageDisabledSnapshot,
+                $uniqueUsageUsedSnapshot
+            );
+            $this->logger->error('Error sending stats to Toggly', ['error' => $e->getMessage()]);
+        } finally {
+            $this->sendInProgress = false;
+        }
+    }
 
-            // Clear current stats
-            $this->stats = [];
+    private function registerShutdownFlush(): void
+    {
+        if ($this->shutdownRegistered) {
+            return;
+        }
+        $this->shutdownRegistered = true;
+        register_shutdown_function(function (): void {
+            try {
+                $this->flush();
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        });
+    }
+
+    private function resolveMetricsBaseUrl(): string
+    {
+        $base = $this->settings->baseUrl;
+        if ($base !== null && $base !== '') {
+            return $base;
+        }
+
+        return GrpcClients::DEFAULT_METRICS_BASE_URL;
+    }
+
+    /**
+     * @param 'checkCount'|'requestCount'|'usedCount'|'viewedCount' $field
+     */
+    private function bumpVariant(string $featureKey, string $variant, string $field): void
+    {
+        if (!isset($this->variantStats[$featureKey][$variant])) {
+            $this->variantStats[$featureKey][$variant] = [
+                'checkCount' => 0,
+                'requestCount' => 0,
+                'usedCount' => 0,
+                'viewedCount' => 0,
+            ];
+        }
+        $this->variantStats[$featureKey][$variant][$field]++;
+    }
+
+    private function recordUniqueUserId(string $featureKey, string $userId): void
+    {
+        if ($featureKey === '' || $userId === '') {
+            return;
+        }
+        $hash = IdentityHasher::hashIdentity($userId);
+        if (!isset($this->uniqueUserHashes[$featureKey])) {
+            $this->uniqueUserHashes[$featureKey] = [];
+        }
+        if (
+            !isset($this->uniqueUserHashes[$featureKey][$hash])
+            && count($this->uniqueUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE
+        ) {
+            $this->logger->warning('Unique user hash limit reached for feature', ['feature' => $featureKey]);
+            return;
+        }
+        $this->uniqueUserHashes[$featureKey][$hash] = true;
+    }
+
+    private function recordUniqueViewedUserId(string $featureKey, string $userId): void
+    {
+        if ($featureKey === '' || $userId === '') {
+            return;
+        }
+        $hash = IdentityHasher::hashIdentity($userId);
+        if (!isset($this->uniqueViewedUserHashes[$featureKey])) {
+            $this->uniqueViewedUserHashes[$featureKey] = [];
+        }
+        if (
+            !isset($this->uniqueViewedUserHashes[$featureKey][$hash])
+            && count($this->uniqueViewedUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE
+        ) {
+            $this->logger->warning('Unique viewed user hash limit reached for feature', ['feature' => $featureKey]);
+            return;
+        }
+        $this->uniqueViewedUserHashes[$featureKey][$hash] = true;
+    }
+
+    private function recordApplicationUniqueUserId(string $userId): void
+    {
+        if ($userId === '') {
+            return;
+        }
+        $hash = IdentityHasher::hashIdentity($userId);
+        if (
+            !isset($this->applicationUniqueUserHashes[$hash])
+            && count($this->applicationUniqueUserHashes) >= self::MAX_APPLICATION_UNIQUE_USER_HASHES
+        ) {
+            $this->logger->warning('Application-level unique user hash limit reached');
+            return;
+        }
+        $this->applicationUniqueUserHashes[$hash] = true;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildPayload(bool $reset): ?array
+    {
+        if (
+            empty($this->variantStats)
+            && empty($this->uniqueUserHashes)
+            && empty($this->uniqueViewedUserHashes)
+            && empty($this->applicationUniqueUserHashes)
+        ) {
+            return null;
+        }
+
+        $featureKeys = array_unique(array_merge(
+            array_keys($this->variantStats),
+            array_keys($this->uniqueUsageEnabled),
+            array_keys($this->uniqueUsageDisabled),
+            array_keys($this->uniqueUsageUsed),
+            array_keys($this->uniqueUserHashes),
+            array_keys($this->uniqueViewedUserHashes)
+        ));
+
+        $stats = [];
+        foreach ($featureKeys as $featureKey) {
+            $variantWire = [];
+            foreach ($this->variantStats[$featureKey] ?? [] as $name => $vs) {
+                if (
+                    $vs['checkCount'] > 0
+                    || $vs['requestCount'] > 0
+                    || $vs['usedCount'] > 0
+                    || $vs['viewedCount'] > 0
+                ) {
+                    $variantWire[$name] = $vs;
+                }
+            }
+            $stats[] = [
+                'feature' => $featureKey,
+                'uniqueContextIdentifierEnabledCount' => count($this->uniqueUsageEnabled[$featureKey] ?? []),
+                'uniqueContextIdentifierDisabledCount' => count($this->uniqueUsageDisabled[$featureKey] ?? []),
+                'uniqueUsersUsedCount' => count($this->uniqueUsageUsed[$featureKey] ?? []),
+                'uniqueUserHashes' => array_map('intval', array_keys($this->uniqueUserHashes[$featureKey] ?? [])),
+                'uniqueViewedUserHashes' => array_map('intval', array_keys($this->uniqueViewedUserHashes[$featureKey] ?? [])),
+                'variantStats' => $variantWire,
+            ];
+        }
+
+        $payload = [
+            'appKey' => $this->settings->appKey,
+            'environment' => $this->settings->environment,
+            'time' => GrpcClients::toProtobufTimestamp(),
+            'stats' => $stats,
+            'totalUniqueUsers' => count($this->applicationUniqueUserHashes),
+            'uniqueUserHashes' => array_map('intval', array_keys($this->applicationUniqueUserHashes)),
+            'processStartTime' => GrpcClients::toProtobufTimestamp($this->processStartTime),
+            'instanceName' => $this->settings->instanceName ?? gethostname(),
+        ];
+        if ($this->settings->appVersion !== null && $this->settings->appVersion !== '') {
+            $payload['appVersion'] = $this->settings->appVersion;
+        }
+
+        if ($reset) {
+            $this->variantStats = [];
             $this->uniqueUsageEnabled = [];
             $this->uniqueUsageDisabled = [];
             $this->uniqueUsageUsed = [];
             $this->uniqueUserHashes = [];
             $this->uniqueViewedUserHashes = [];
             $this->applicationUniqueUserHashes = [];
+        }
 
-            // Build payload
-            $payload = [
-                'appKey' => $this->settings->appKey,
-                'environment' => $this->settings->environment,
-                'time' => date('c'),
-                'instanceName' => $this->settings->instanceName ?? gethostname(),
-                'stats' => [],
-            ];
+        return $payload;
+    }
 
-            // Get all feature keys
-            $featureKeys = array_unique(array_merge(
-                array_keys($statsToSend),
-                array_keys($uniqueEnabledToSend),
-                array_keys($uniqueDisabledToSend),
-                array_keys($uniqueUsedToSend),
-                array_keys($uniqueHashesToSend),
-                array_keys($uniqueViewedHashesToSend)
-            ));
+    /**
+     * HTTPS JSON fallback keeps ISO-8601 time strings for gateway compatibility.
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function toHttpJsonPayload(array $payload): array
+    {
+        $out = $payload;
+        $out['time'] = date('c', (int) (($payload['time']['seconds'] ?? time())));
+        if (isset($payload['processStartTime']['seconds'])) {
+            $out['processStartTime'] = date('c', (int) $payload['processStartTime']['seconds']);
+        }
 
-            foreach ($featureKeys as $featureKey) {
-                $stat = [
-                    'feature' => $featureKey,
-                    'enabledCount' => $statsToSend[$featureKey][self::STAT_TYPE_ENABLED] ?? 0,
-                    'disabledCount' => $statsToSend[$featureKey][self::STAT_TYPE_DISABLED] ?? 0,
-                    'uniqueContextIdentifierEnabledCount' => count($uniqueEnabledToSend[$featureKey] ?? []),
-                    'uniqueContextIdentifierDisabledCount' => count($uniqueDisabledToSend[$featureKey] ?? []),
-                    'uniqueRequestEnabledCount' => $statsToSend[$featureKey][self::STAT_TYPE_UNIQUE_REQUEST_ENABLED] ?? 0,
-                    'uniqueRequestDisabledCount' => $statsToSend[$featureKey][self::STAT_TYPE_UNIQUE_REQUEST_DISABLED] ?? 0,
-                    'usedCount' => $statsToSend[$featureKey][self::STAT_TYPE_USED] ?? 0,
-                    'uniqueUsersUsedCount' => count($uniqueUsedToSend[$featureKey] ?? []),
-                ];
+        return $out;
+    }
 
-                // Add unique user hashes (USED tracking)
-                if (isset($uniqueHashesToSend[$featureKey])) {
-                    $stat['uniqueUserHashes'] = $uniqueHashesToSend[$featureKey];
-                }
-
-                // Add unique viewed user hashes (VIEWED tracking)
-                if (isset($uniqueViewedHashesToSend[$featureKey])) {
-                    $stat['uniqueViewedUserHashes'] = $uniqueViewedHashesToSend[$featureKey];
-                }
-
-                $payload['stats'][] = $stat;
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function restoreFromPayload(array $payload): void
+    {
+        foreach ($payload['stats'] ?? [] as $stat) {
+            if (!is_array($stat)) {
+                continue;
             }
-
-            // Add application-level unique user hashes
-            if (!empty($appHashesToSend)) {
-                $payload['uniqueUserHashes'] = $appHashesToSend;
+            $feature = (string) ($stat['feature'] ?? '');
+            if ($feature === '') {
+                continue;
             }
+            foreach ($stat['variantStats'] ?? [] as $name => $vs) {
+                if (!is_array($vs)) {
+                    continue;
+                }
+                if (!isset($this->variantStats[$feature][$name])) {
+                    $this->variantStats[$feature][$name] = [
+                        'checkCount' => 0,
+                        'requestCount' => 0,
+                        'usedCount' => 0,
+                        'viewedCount' => 0,
+                    ];
+                }
+                foreach (['checkCount', 'requestCount', 'usedCount', 'viewedCount'] as $field) {
+                    $this->variantStats[$feature][$name][$field] += (int) ($vs[$field] ?? 0);
+                }
+            }
+            foreach ($stat['uniqueUserHashes'] ?? [] as $hash) {
+                $this->uniqueUserHashes[$feature][(int) $hash] = true;
+            }
+            foreach ($stat['uniqueViewedUserHashes'] ?? [] as $hash) {
+                $this->uniqueViewedUserHashes[$feature][(int) $hash] = true;
+            }
+        }
+        foreach ($payload['uniqueUserHashes'] ?? [] as $hash) {
+            $this->applicationUniqueUserHashes[(int) $hash] = true;
+        }
+    }
 
-            // Send to API
-            $this->httpClient->post('api/usage/stats', $payload);
+    /**
+     * Union-merge unique-usage hash-set snapshots taken at send time.
+     *
+     * @param array<string, array<int, true>> $enabled
+     * @param array<string, array<int, true>> $disabled
+     * @param array<string, array<int, true>> $used
+     */
+    private function restoreUniqueUsageMaps(array $enabled, array $disabled, array $used): void
+    {
+        $this->mergeUniqueUsageMap($this->uniqueUsageEnabled, $enabled);
+        $this->mergeUniqueUsageMap($this->uniqueUsageDisabled, $disabled);
+        $this->mergeUniqueUsageMap($this->uniqueUsageUsed, $used);
+    }
 
-            $this->lastSend = time();
-            $this->logger->debug('Statistics sent successfully');
-        } catch (\Exception $e) {
-            // Restore stats on error
-            $this->stats = array_merge_recursive($this->stats, $statsToSend ?? []);
-            $this->uniqueUsageEnabled = array_merge_recursive($this->uniqueUsageEnabled, $uniqueEnabledToSend ?? []);
-            $this->uniqueUsageDisabled = array_merge_recursive($this->uniqueUsageDisabled, $uniqueDisabledToSend ?? []);
-            $this->uniqueUsageUsed = array_merge_recursive($this->uniqueUsageUsed, $uniqueUsedToSend ?? []);
-            $this->uniqueUserHashes = array_merge_recursive($this->uniqueUserHashes, $uniqueHashesToSend ?? []);
-            $this->uniqueViewedUserHashes = array_merge_recursive($this->uniqueViewedUserHashes, $uniqueViewedHashesToSend ?? []);
-            $this->applicationUniqueUserHashes = array_merge($this->applicationUniqueUserHashes, $appHashesToSend ?? []);
-
-            $this->logger->error('Error sending stats to Toggly', ['error' => $e->getMessage()]);
-        } finally {
-            $this->sendInProgress = false;
+    /**
+     * @param array<string, array<int, true>> $target
+     * @param array<string, array<int, true>> $snapshot
+     */
+    private function mergeUniqueUsageMap(array &$target, array $snapshot): void
+    {
+        foreach ($snapshot as $featureKey => $hashes) {
+            if (!isset($target[$featureKey])) {
+                $target[$featureKey] = [];
+            }
+            foreach ($hashes as $hash => $_) {
+                $target[$featureKey][(int) $hash] = true;
+            }
         }
     }
 }

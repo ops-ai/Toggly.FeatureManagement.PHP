@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-06
+
+### Added
+- Optional native gRPC transport for `Usage.SendStats` and `Metrics.SendMetrics`
+  (requires `ext-grpc` + `google/protobuf`; soft-fails without them).
+- `UsageStatsProviderInterface::recordView` and unique viewed user hashes.
+- UTF-8 FNV-1a signed int32 identity hashing matching Go/Node/Python golden
+  vectors (`alice`, `café`, emoji).
+- Vendored `proto/usage.proto` / `proto/metrics.proto` and generated PHP message
+  stubs under `Telemetry/Pb`.
+- Best-effort shutdown flush via `register_shutdown_function` / `flush()`.
+
+### Changed
+- Usage wire payloads prefer `variantStats` (`checkCount` / `requestCount` /
+  `usedCount` / `viewedCount`) instead of legacy enabled/disabled scalars.
+- Metrics continue to emit `variantValues`; send path prefers gRPC then HTTPS
+  JSON fallback (`api/usage/stats`, `api/metrics`).
+- gRPC metadata user-agent key is `ua` (PHP ext-grpc lowercases keys; same
+  semantics as .NET/Go/Node `UA`).
+- SDK identity version bumped to `0.4.0`.
+- `GrpcPayloadConverter` lives in PSR-4 source (no `ext-grpc` load requirement);
+  BaseStub subclasses stay in `resources/grpc/`.
+
+### Fixed
+- Unique used/viewed/application hash limits now refuse new hashes consistently
+  once the cap is reached (existing hashes still accepted).
+- Owned gRPC client pairs are closed on provider/service destroy.
+
 ## [0.3.0] - 2026-09-04
 
 ### Added

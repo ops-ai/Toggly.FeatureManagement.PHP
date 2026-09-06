@@ -6,11 +6,19 @@ use Toggly\FeatureManagement\Config\TogglySettings;
 use Toggly\FeatureManagement\Contracts\FeatureProviderInterface;
 use Toggly\FeatureManagement\Contracts\MetricsServiceInterface;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\SdkIdentity;
+use Toggly\FeatureManagement\Telemetry\GrpcClients;
+use Toggly\FeatureManagement\Telemetry\MetricsGrpcClient;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * Service for collecting and sending custom metrics
+ * Service for collecting and sending custom metrics.
+ *
+ * Prefers native gRPC {@code Metrics.SendMetrics} when available; otherwise uses
+ * the gateway-accepted HTTPS JSON path ({@code api/metrics}). Wire payloads use
+ * {@code variantValues}. Periodic flush is host-driven (Laravel schedule /
+ * WP-Cron); {@see flush()} provides best-effort shutdown flush.
  */
 class MetricsService implements MetricsServiceInterface
 {
@@ -19,6 +27,8 @@ class MetricsService implements MetricsServiceInterface
     private FeatureProviderInterface $featureProvider;
     private MetricsRegistryService $metricsRegistry;
     private LoggerInterface $logger;
+    private ?MetricsGrpcClient $grpcClient;
+    private ?GrpcClients $ownedGrpcClients = null;
 
     /**
      * @var array<string, array<string, float>> Measurements by metric key, variant-keyed
@@ -26,7 +36,7 @@ class MetricsService implements MetricsServiceInterface
     private array $measurements = [];
 
     /**
-     * @var array<array{time: int, metricKey: string, featureKey: string|null, variant: string, value: float}> Observations
+     * @var array<array{time: int, metricKey: string, featureKey: string|null, variant: string, value: float}>
      */
     private array $observations = [];
 
@@ -36,6 +46,7 @@ class MetricsService implements MetricsServiceInterface
     private array $counters = [];
 
     private bool $sendInProgress = false;
+    private bool $shutdownRegistered = false;
     private ?int $lastSend = null;
 
     public function __construct(
@@ -43,7 +54,8 @@ class MetricsService implements MetricsServiceInterface
         TogglyHttpClient $httpClient,
         FeatureProviderInterface $featureProvider,
         MetricsRegistryService $metricsRegistry,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?MetricsGrpcClient $grpcClient = null
     ) {
         $this->settings = $settings;
         $this->httpClient = $httpClient;
@@ -51,16 +63,41 @@ class MetricsService implements MetricsServiceInterface
         $this->metricsRegistry = $metricsRegistry;
         $this->logger = $logger ?? new NullLogger();
 
-        // Start send timer
-        $this->startSendTimer();
+        if ($grpcClient !== null) {
+            $this->grpcClient = $grpcClient;
+        } else {
+            $clients = GrpcClients::create(
+                $this->resolveMetricsBaseUrl(),
+                SdkIdentity::userAgent(),
+                $this->logger
+            );
+            $this->ownedGrpcClients = $clients;
+            $this->grpcClient = $clients !== null ? $clients->metrics() : null;
+            if ($clients === null && !GrpcClients::isAvailable()) {
+                $this->logger->debug(
+                    'Metrics gRPC unavailable (need ext-grpc + google/protobuf); using HTTPS JSON fallback'
+                );
+            }
+        }
+
+        $this->registerShutdownFlush();
     }
 
-    /**
-     * Start the send timer
-     */
-    private function startSendTimer(): void
+    public function __destruct()
     {
-        // In a real implementation, you'd use a proper scheduler
+        try {
+            $this->flush();
+        } catch (\Throwable $e) {
+            // Best-effort
+        }
+        if ($this->ownedGrpcClients !== null) {
+            try {
+                $this->ownedGrpcClients->close();
+            } catch (\Throwable $e) {
+                // Best-effort
+            }
+            $this->ownedGrpcClients = null;
+        }
     }
 
     /**
@@ -70,13 +107,9 @@ class MetricsService implements MetricsServiceInterface
     {
         $this->incrementMeasurement($metricKey, null, $value, true);
 
-        // Track for associated features
         $features = $this->featureProvider->getFeaturesForMetric($metricKey);
         if ($features !== null) {
-            // In a real implementation, we'd check if features are enabled
-            // For now, we'll just track the base measurement
             foreach ($features as $feature) {
-                // This would require FeatureManager - simplified for now
                 $this->incrementMeasurement($metricKey, $feature, $value, true);
             }
         }
@@ -98,7 +131,6 @@ class MetricsService implements MetricsServiceInterface
         $date = time();
         $this->storeObservation($date, $metricKey, null, $value, true);
 
-        // Track for associated features
         $features = $this->featureProvider->getFeaturesForMetric($metricKey);
         if ($features !== null) {
             foreach ($features as $feature) {
@@ -122,7 +154,6 @@ class MetricsService implements MetricsServiceInterface
     {
         $this->incrementMetricCounter($metricKey, null, $value, true);
 
-        // Track for associated features
         $features = $this->featureProvider->getFeaturesForMetric($metricKey);
         if ($features !== null) {
             foreach ($features as $feature) {
@@ -140,46 +171,124 @@ class MetricsService implements MetricsServiceInterface
     }
 
     /**
-     * Increment a measurement (backward compatibility)
+     * Best-effort flush (alias of {@see sendMetrics()}).
      */
+    public function flush(): void
+    {
+        $this->sendMetrics();
+    }
+
+    /**
+     * Build current MetricStat-shaped payload without clearing (tests).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function peekPayload(): ?array
+    {
+        return $this->buildPayload(false);
+    }
+
+    /**
+     * Send metrics to Toggly (single-flight).
+     */
+    public function sendMetrics(): void
+    {
+        if ($this->sendInProgress) {
+            $this->logger->debug('Send metrics already in progress, skipping');
+            return;
+        }
+
+        // Set immediately after the guard so registry callbacks that re-enter
+        // sendMetrics cannot double-buildPayload(true) and clear in-flight data.
+        $this->sendInProgress = true;
+
+        try {
+            $registryMeasurements = $this->metricsRegistry->getMeasurementValues();
+            foreach ($registryMeasurements as $key => $value) {
+                $this->incrementMeasurement($key, null, $value, true);
+            }
+
+            $registryCounters = $this->metricsRegistry->getCounterValues();
+            foreach ($registryCounters as $key => $value) {
+                $this->incrementMetricCounter($key, null, $value, true);
+            }
+
+            $registryObservations = $this->metricsRegistry->getObservationValues();
+            foreach ($registryObservations as $key => $data) {
+                $this->storeObservation($data[0], $key, null, $data[1], true);
+            }
+
+            $payload = $this->buildPayload(true);
+            if ($payload === null) {
+                $this->logger->debug('No metrics to send');
+                return;
+            }
+
+            try {
+                if ($this->grpcClient !== null) {
+                    $this->grpcClient->sendMetrics($payload);
+                } else {
+                    $this->httpClient->post('api/metrics', $this->toHttpJsonPayload($payload));
+                }
+                $this->lastSend = time();
+                $this->logger->debug('Metrics sent successfully', [
+                    'transport' => $this->grpcClient !== null ? 'grpc' : 'http',
+                ]);
+            } catch (\Throwable $e) {
+                $this->restoreFromPayload($payload);
+                $this->logger->error('Error sending metrics to Toggly', ['error' => $e->getMessage()]);
+            }
+        } finally {
+            $this->sendInProgress = false;
+        }
+    }
+
+    private function registerShutdownFlush(): void
+    {
+        if ($this->shutdownRegistered) {
+            return;
+        }
+        $this->shutdownRegistered = true;
+        register_shutdown_function(function (): void {
+            try {
+                $this->flush();
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        });
+    }
+
+    private function resolveMetricsBaseUrl(): string
+    {
+        $base = $this->settings->baseUrl;
+        if ($base !== null && $base !== '') {
+            return $base;
+        }
+
+        return GrpcClients::DEFAULT_METRICS_BASE_URL;
+    }
+
     private function incrementMeasurement(string $metricKey, ?string $featureKey, float $value, bool $enabled): void
     {
         $variant = $enabled ? 'enabled' : 'disabled';
         $this->incrementMeasurementVariant($metricKey, $featureKey, $value, $variant);
     }
 
-    /**
-     * Increment a measurement with variant support
-     */
     private function incrementMeasurementVariant(string $metricKey, ?string $featureKey, float $value, string $variant): void
     {
         $key = $featureKey !== null ? "{$metricKey}:{$featureKey}" : $metricKey;
-
         if (!isset($this->measurements[$key])) {
             $this->measurements[$key] = [];
         }
-
         if (!isset($this->measurements[$key][$variant])) {
             $this->measurements[$key][$variant] = 0.0;
         }
-
         $this->measurements[$key][$variant] += $value;
     }
 
-    /**
-     * Store an observation (backward compatibility)
-     */
     private function storeObservation(int $date, string $metricKey, ?string $featureKey, float $value, bool $enabled): void
     {
         $variant = $enabled ? 'enabled' : 'disabled';
-        $this->storeObservationVariant($date, $metricKey, $featureKey, $value, $variant);
-    }
-
-    /**
-     * Store an observation with variant support
-     */
-    private function storeObservationVariant(int $date, string $metricKey, ?string $featureKey, float $value, string $variant): void
-    {
         $this->observations[] = [
             'time' => $date,
             'metricKey' => $metricKey,
@@ -189,154 +298,158 @@ class MetricsService implements MetricsServiceInterface
         ];
     }
 
-    /**
-     * Increment a counter (backward compatibility)
-     */
     private function incrementMetricCounter(string $metricKey, ?string $featureKey, float $value, bool $enabled): void
     {
         $variant = $enabled ? 'enabled' : 'disabled';
-        $this->incrementMetricCounterVariant($metricKey, $featureKey, $value, $variant);
-    }
-
-    /**
-     * Increment a counter with variant support
-     */
-    private function incrementMetricCounterVariant(string $metricKey, ?string $featureKey, float $value, string $variant): void
-    {
         $key = $featureKey !== null ? "{$metricKey}:{$featureKey}" : $metricKey;
-
         if (!isset($this->counters[$key])) {
             $this->counters[$key] = [];
         }
-
         if (!isset($this->counters[$key][$variant])) {
             $this->counters[$key][$variant] = 0.0;
         }
-
         $this->counters[$key][$variant] += $value;
     }
 
     /**
-     * Send metrics to Toggly
+     * @return array<string, mixed>|null
      */
-    public function sendMetrics(): void
+    private function buildPayload(bool $reset): ?array
     {
-        if ($this->sendInProgress) {
-            $this->logger->debug('Send metrics already in progress, skipping');
-            return;
-        }
-
-        // Get values from registry
-        $registryMeasurements = $this->metricsRegistry->getMeasurementValues();
-        foreach ($registryMeasurements as $key => $value) {
-            $this->incrementMeasurement($key, null, $value, true);
-        }
-
-        $registryCounters = $this->metricsRegistry->getCounterValues();
-        foreach ($registryCounters as $key => $value) {
-            $this->incrementMetricCounter($key, null, $value, true);
-        }
-
-        $registryObservations = $this->metricsRegistry->getObservationValues();
-        foreach ($registryObservations as $key => $data) {
-            $this->storeObservation($data[0], $key, null, $data[1], true);
-        }
-
         if (empty($this->measurements) && empty($this->counters) && empty($this->observations)) {
-            $this->logger->debug('No metrics to send');
-            return;
+            return null;
         }
 
-        $this->sendInProgress = true;
+        $measurementsToSend = $this->measurements;
+        $countersToSend = $this->counters;
+        $observationsToSend = $this->observations;
 
-        try {
-            // Clone metrics to send
-            $measurementsToSend = $this->measurements;
-            $countersToSend = $this->counters;
-            $observationsToSend = $this->observations;
+        $payload = [
+            'appKey' => $this->settings->appKey,
+            'environment' => $this->settings->environment,
+            'time' => GrpcClients::toProtobufTimestamp(),
+            'instanceName' => $this->settings->instanceName ?? gethostname(),
+            'stats' => [],
+            'counters' => [],
+            'observations' => [],
+        ];
 
-            // Clear current metrics
+        foreach ($measurementsToSend as $key => $variantValues) {
+            [$metricKey, $featureKey] = $this->parseKey($key);
+            $stat = [
+                'metric' => $metricKey,
+                'variantValues' => $variantValues,
+            ];
+            if ($featureKey !== null) {
+                $stat['feature'] = $featureKey;
+            }
+            $payload['stats'][] = $stat;
+        }
+
+        foreach ($countersToSend as $key => $variantValues) {
+            [$metricKey, $featureKey] = $this->parseKey($key);
+            $counter = [
+                'metric' => $metricKey,
+                'variantValues' => $variantValues,
+            ];
+            if ($featureKey !== null) {
+                $counter['feature'] = $featureKey;
+            }
+            $payload['counters'][] = $counter;
+        }
+
+        $observationGroups = [];
+        foreach ($observationsToSend as $obs) {
+            $groupKey = $obs['time'] . ':' . $obs['metricKey'] . ':' . ($obs['featureKey'] ?? '');
+            if (!isset($observationGroups[$groupKey])) {
+                $observationGroups[$groupKey] = [
+                    'metric' => $obs['metricKey'],
+                    'time' => GrpcClients::toProtobufTimestamp($obs['time']),
+                    'variantValues' => [],
+                ];
+                if ($obs['featureKey'] !== null) {
+                    $observationGroups[$groupKey]['feature'] = $obs['featureKey'];
+                }
+            }
+            $observationGroups[$groupKey]['variantValues'][$obs['variant']] = $obs['value'];
+        }
+        $payload['observations'] = array_values($observationGroups);
+
+        if ($reset) {
             $this->measurements = [];
             $this->counters = [];
             $this->observations = [];
+        }
 
-            // Build payload
-            $payload = [
-                'appKey' => $this->settings->appKey,
-                'environment' => $this->settings->environment,
-                'time' => date('c'),
-                'instanceName' => $this->settings->instanceName ?? gethostname(),
-                'stats' => [],
-                'counters' => [],
-                'observations' => [],
-            ];
+        return $payload;
+    }
 
-            // Process measurements
-            foreach ($measurementsToSend as $key => $variantValues) {
-                [$metricKey, $featureKey] = $this->parseKey($key);
-                $stat = [
-                    'metric' => $metricKey,
-                    'variantValues' => $variantValues, // Now sends all variants as a map
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function toHttpJsonPayload(array $payload): array
+    {
+        $out = $payload;
+        $out['time'] = date('c', (int) (($payload['time']['seconds'] ?? time())));
+        foreach ($out['observations'] as $i => $obs) {
+            if (isset($obs['time']['seconds'])) {
+                $out['observations'][$i]['time'] = date('c', (int) $obs['time']['seconds']);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function restoreFromPayload(array $payload): void
+    {
+        foreach ($payload['stats'] ?? [] as $stat) {
+            if (!is_array($stat)) {
+                continue;
+            }
+            $key = isset($stat['feature']) ? $stat['metric'] . ':' . $stat['feature'] : $stat['metric'];
+            foreach ($stat['variantValues'] ?? [] as $variant => $value) {
+                if (!isset($this->measurements[$key][$variant])) {
+                    $this->measurements[$key][$variant] = 0.0;
+                }
+                $this->measurements[$key][$variant] += (float) $value;
+            }
+        }
+        foreach ($payload['counters'] ?? [] as $counter) {
+            if (!is_array($counter)) {
+                continue;
+            }
+            $key = isset($counter['feature']) ? $counter['metric'] . ':' . $counter['feature'] : $counter['metric'];
+            foreach ($counter['variantValues'] ?? [] as $variant => $value) {
+                if (!isset($this->counters[$key][$variant])) {
+                    $this->counters[$key][$variant] = 0.0;
+                }
+                $this->counters[$key][$variant] += (float) $value;
+            }
+        }
+        foreach ($payload['observations'] ?? [] as $obs) {
+            if (!is_array($obs)) {
+                continue;
+            }
+            $seconds = is_array($obs['time'] ?? null)
+                ? (int) ($obs['time']['seconds'] ?? time())
+                : time();
+            foreach ($obs['variantValues'] ?? [] as $variant => $value) {
+                $this->observations[] = [
+                    'time' => $seconds,
+                    'metricKey' => (string) ($obs['metric'] ?? ''),
+                    'featureKey' => $obs['feature'] ?? null,
+                    'variant' => (string) $variant,
+                    'value' => (float) $value,
                 ];
-                if ($featureKey !== null) {
-                    $stat['feature'] = $featureKey;
-                }
-                $payload['stats'][] = $stat;
             }
-
-            // Process counters
-            foreach ($countersToSend as $key => $variantValues) {
-                [$metricKey, $featureKey] = $this->parseKey($key);
-                $counter = [
-                    'metric' => $metricKey,
-                    'variantValues' => $variantValues, // Now sends all variants as a map
-                ];
-                if ($featureKey !== null) {
-                    $counter['feature'] = $featureKey;
-                }
-                $payload['counters'][] = $counter;
-            }
-
-            // Process observations (group by time+metric+feature)
-            $observationGroups = [];
-            foreach ($observationsToSend as $obs) {
-                $groupKey = $obs['time'] . ':' . $obs['metricKey'] . ':' . ($obs['featureKey'] ?? '');
-                
-                if (!isset($observationGroups[$groupKey])) {
-                    $observationGroups[$groupKey] = [
-                        'metric' => $obs['metricKey'],
-                        'time' => date('c', $obs['time']),
-                        'variantValues' => [],
-                    ];
-                    if ($obs['featureKey'] !== null) {
-                        $observationGroups[$groupKey]['feature'] = $obs['featureKey'];
-                    }
-                }
-                
-                $observationGroups[$groupKey]['variantValues'][$obs['variant']] = $obs['value'];
-            }
-            
-            $payload['observations'] = array_values($observationGroups);
-
-            // Send to API
-            $this->httpClient->post('api/metrics', $payload);
-
-            $this->lastSend = time();
-            $this->logger->debug('Metrics sent successfully');
-        } catch (\Exception $e) {
-            // Restore metrics on error
-            $this->measurements = array_merge_recursive($this->measurements, $measurementsToSend ?? []);
-            $this->counters = array_merge_recursive($this->counters, $countersToSend ?? []);
-            $this->observations = array_merge($this->observations, $observationsToSend ?? []);
-
-            $this->logger->error('Error sending metrics to Toggly', ['error' => $e->getMessage()]);
-        } finally {
-            $this->sendInProgress = false;
         }
     }
 
     /**
-     * Parse a key into metric key and feature key
      * @return array{0: string, 1: string|null}
      */
     private function parseKey(string $key): array
@@ -345,6 +458,7 @@ class MetricsService implements MetricsServiceInterface
         if (count($parts) === 2) {
             return [$parts[0], $parts[1]];
         }
+
         return [$key, null];
     }
 }

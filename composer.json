@@ -1,6 +1,6 @@
 {
     "name": "toggly/feature-management-php",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Toggly Feature Management library for PHP with Laravel and WordPress support",
     "type": "library",
     "keywords": [
@@ -36,6 +36,7 @@
         "psr/log": "^1.0|^2.0|^3.0"
     },
     "require-dev": {
+        "google/protobuf": "^3.25|^4.0",
         "illuminate/cache": "^11.47",
         "illuminate/contracts": "^11.0",
         "mongodb/mongodb": "^2.0",
@@ -43,6 +44,8 @@
         "textalk/websocket": "^1.6"
     },
     "suggest": {
+        "ext-grpc": "Native gRPC transport for Usage.SendStats / Metrics.SendMetrics (soft-fail without it)",
+        "google/protobuf": "Protobuf runtime for optional gRPC telemetry messages (^3.0|^4.0)",
         "react/socket": "For WebSocket support",
         "guzzlehttp/guzzle": "PSR-18 HTTP client implementation",
         "symfony/http-client": "Alternative PSR-18 HTTP client",
@@ -50,6 +53,9 @@
         "illuminate/http": "For Laravel HTTP integration (^10.0|^11.0|^12.0)",
         "illuminate/cache": "For Laravel cache storage provider (^10.0|^11.0|^12.0)",
         "mongodb/mongodb": "For MongoDB storage provider (^2.0)"
+    },
+    "scripts": {
+        "test": "phpunit"
     },
     "autoload": {
         "psr-4": {

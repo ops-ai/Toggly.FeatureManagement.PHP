@@ -27,4 +27,10 @@ interface UsageStatsProviderInterface
      * @param string $featureKey Name/key of the feature
      */
     public function recordUsage(string $featureKey): void;
+
+    /**
+     * Record a feature being viewed / rendered
+     * @param string $featureKey Name/key of the feature
+     */
+    public function recordView(string $featureKey): void;
 }

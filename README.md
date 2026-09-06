@@ -243,6 +243,42 @@ $metricsService->observe('active-users', 1500);
 $metricsService->incrementCounter('api-calls', 1);
 ```
 
+### Usage + metrics telemetry (gRPC parity)
+
+`UsageStatsProvider` and `MetricsService` batch in-process and flush via
+`sendStats()` / `sendMetrics()` (or `flush()`). Timers are **host-driven**:
+register Laravel schedule / WP-Cron (see Laravel README). A best-effort
+shutdown flush is registered automatically.
+
+**Transport (prefer gRPC):**
+
+1. When `ext-grpc` and Composer package `google/protobuf` are available, the
+   SDK dials native gRPC `Usage.SendStats` / `Metrics.SendMetrics` against the
+   metrics base URL (default `https://app.toggly.io/`).
+2. Otherwise it soft-fails and posts the same wire shape over HTTPS JSON to
+   `api/usage/stats` and `api/metrics` (gateway-accepted path). Feature
+   evaluation is never blocked by telemetry failures.
+
+**gRPC metadata:** the SDK user-agent is sent as metadata key `ua`. PHP's
+gRPC extension lowercases HTTP/2 metadata keys; this matches .NET/Go/Node
+`UA` on the wire (case-insensitive).
+
+```bash
+# Optional native gRPC
+pecl install grpc
+composer require google/protobuf
+```
+
+```php
+$usage = $container->get(UsageStatsProvider::class);
+$usage->recordUsage('checkout');
+$usage->recordView('checkout'); // viewed / rendered
+$usage->sendStats();
+```
+
+Wire payloads use multi-variant maps (`variantStats` / `variantValues`) and
+UTF-8 FNV-1a signed int32 identity hashes (Go/Node/Python parity).
+
 ### Custom Context Provider
 
 ```php

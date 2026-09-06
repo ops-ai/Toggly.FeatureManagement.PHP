@@ -44,7 +44,10 @@ protected $routeMiddleware = [
 ];
 ```
 
-5. **Schedule tasks** in `app/Console/Kernel.php`:
+5. **Schedule tasks** in `app/Console/Kernel.php` (or `routes/console.php` on
+   Laravel 11+). PHP has no in-process minute timer by default — periodic
+   flush stays host-driven. `UsageStatsProvider` / `MetricsService` also
+   register a best-effort `register_shutdown_function` flush.
 
 ```php
 protected function schedule(Schedule $schedule)
@@ -54,16 +57,26 @@ protected function schedule(Schedule $schedule)
         app(\Toggly\FeatureManagement\Core\FeatureProvider::class)->refreshFeatures();
     })->everyFiveMinutes();
 
-    // Send stats every minute
+    // Send usage stats every minute (gRPC when ext-grpc + google/protobuf
+    // are installed; otherwise HTTPS JSON fallback)
     $schedule->call(function () {
         app(\Toggly\FeatureManagement\Core\UsageStatsProvider::class)->sendStats();
     })->everyMinute();
 
-    // Send metrics every minute
+    // Send business metrics every minute
     $schedule->call(function () {
         app(\Toggly\FeatureManagement\Core\MetricsService::class)->sendMetrics();
     })->everyMinute();
 }
+```
+
+Optional: also flush on request terminate for Octane / long workers:
+
+```php
+app()->terminating(function () {
+    app(\Toggly\FeatureManagement\Core\UsageStatsProvider::class)->flush();
+    app(\Toggly\FeatureManagement\Core\MetricsService::class)->flush();
+});
 ```
 
 ## Usage

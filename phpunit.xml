@@ -9,6 +9,9 @@
         <testsuite name="default">
             <directory>tests</directory>
         </testsuite>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
     </testsuites>
     <coverage>
         <report>
@@ -16,7 +19,9 @@
             <text outputFile="php://stdout"/>
         </report>
         <include>
-            <directory suffix=".php">src</directory>
+            <directory suffix=".php">packages/feature-management-php/src</directory>
+            <directory suffix=".php">packages/laravel/src</directory>
+            <directory suffix=".php">packages/wordpress/src</directory>
         </include>
     </coverage>
     <php>

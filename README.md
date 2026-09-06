@@ -9,9 +9,26 @@
 
 Official PHP SDK for [Toggly](https://toggly.io) feature flags — Composer package with native Laravel and WordPress support.
 
+## Repository layout (Composer monorepo)
+
+This repo is a **path-repo monorepo** for local development and CI:
+
+| Path | Package name | Namespace |
+|------|--------------|-----------|
+| `packages/feature-management-php/` | `toggly/feature-management-php` | `Toggly\FeatureManagement\` |
+| `packages/laravel/` | `toggly/laravel` | `Toggly\Laravel\` |
+| `packages/wordpress/` | `toggly/wordpress` | `Toggly\WordPress\` |
+
+The root `composer.json` is a **private dev workspace** (`repositories` → `packages/*`). It is **not** a Packagist package.
+
+**Packagist today:** consumers still install the single published package
+`toggly/feature-management-php` (pre-1.0). Framework packages are not submitted
+to Packagist until the 1.0 split (OPS-963). Until then, CI and contributors use
+path repositories from this monorepo.
+
 ## Roadmap (1.0 Packagist split)
 
-Today this single package ships core, Laravel, and WordPress together. A
+Today the published Packagist coordinate remains a single package. A
 breaking **1.0** release will keep `toggly/feature-management-php` as
 **core-only** and publish framework packages separately:
 
@@ -334,7 +351,7 @@ $context = HttpRequestMapper::mergeIntoContext($headers, [
 
 Segment filters (`BrowserFamily`, `BrowserLanguage`, `Country`, `DeviceType`,
 `OS` / `OperatingSystem`) and `UserClaims` are evaluated in **core**
-`FeatureManager`. Classes under `src/Toggly/Laravel/Filters/` are legacy
+`FeatureManager`. Classes under `packages/laravel/src/Filters/` are legacy
 helpers and are not the evaluation path.
 
 ## Requirements

@@ -7,36 +7,46 @@
   <a href="https://toggly.io"><img src="https://img.shields.io/badge/website-toggly.io-0A66C2.svg" alt="Website"></a>
 </p>
 
-Official PHP SDK for [Toggly](https://toggly.io) feature flags — Composer package with native Laravel and WordPress support.
+Official PHP SDK for [Toggly](https://toggly.io) feature flags — Composer packages for core, Laravel, and WordPress.
 
-## Repository layout (Composer monorepo)
+## Repository layout
 
-This repo is a **path-repo monorepo** for local development and CI:
+| Path | Package name | Packagist publish surface |
+|------|--------------|---------------------------|
+| Repo root (`src/`, root `composer.json`) | `toggly/feature-management-php` | This repo (Packagist GitHub URL) |
+| `packages/laravel/` | `toggly/laravel` | Mirror `ops-ai/Toggly.FeatureManagement.PHP.Laravel` |
+| `packages/wordpress/` | `toggly/wordpress` | Mirror `ops-ai/Toggly.FeatureManagement.PHP.Wordpress` |
 
-| Path | Package name | Namespace |
-|------|--------------|-----------|
-| `packages/feature-management-php/` | `toggly/feature-management-php` | `Toggly\FeatureManagement\` |
-| `packages/laravel/` | `toggly/laravel` | `Toggly\Laravel\` |
-| `packages/wordpress/` | `toggly/wordpress` | `Toggly\WordPress\` |
+Root `composer.json` **is** the publishable core package. Path repositories under
+`packages/*` exist for local CI so Laravel/WordPress can depend on core in-tree.
+Namespaces: `Toggly\FeatureManagement\`, `Toggly\Laravel\`, `Toggly\WordPress\`.
 
-The root `composer.json` is a **private dev workspace** (`repositories` → `packages/*`). It is **not** a Packagist package.
+## Installation
 
-**Packagist today:** consumers still install the single published package
-`toggly/feature-management-php` (pre-1.0). Framework packages are not submitted
-to Packagist until the 1.0 split (OPS-963). Until then, CI and contributors use
-path repositories from this monorepo.
+### Core only
 
-## Roadmap (1.0 Packagist split)
+```bash
+composer require toggly/feature-management-php
+```
 
-Today the published Packagist coordinate remains a single package. A
-breaking **1.0** release will keep `toggly/feature-management-php` as
-**core-only** and publish framework packages separately:
+### Laravel (includes core)
 
-- `composer require toggly/laravel` — Laravel integration (depends on core)
-- `composer require toggly/wordpress` — WordPress integration (depends on core)
+```bash
+composer require toggly/laravel
+```
 
-PHP namespaces (`Toggly\FeatureManagement`, `Toggly\Laravel`,
-`Toggly\WordPress`) stay the same; only Composer coordinates change.
+### WordPress (includes core)
+
+```bash
+composer require toggly/wordpress
+```
+
+For non-Composer WordPress installs, copy or symlink the `toggly/wordpress`
+package directory to `wp-content/plugins/toggly/` so WordPress loads `toggly.php`.
+
+**Migration from pre-1.0:** if you previously relied on Laravel/WordPress classes
+from `toggly/feature-management-php` alone, also require `toggly/laravel` or
+`toggly/wordpress`. Core 1.0 no longer ships those namespaces.
 
 ## Features
 
@@ -49,14 +59,6 @@ PHP namespaces (`Toggly\FeatureManagement`, `Toggly\Laravel`,
 - **Laravel Integration**: Native Laravel service provider, facade, and middleware
 - **WordPress Plugin**: Full WordPress plugin with admin interface and hooks
 - **PSR Standards**: Built on PSR-4, PSR-11, PSR-16, PSR-18, and PSR-17
-
-## Installation
-
-### Composer
-
-```bash
-composer require toggly/feature-management-php
-```
 
 ## Quick Start
 

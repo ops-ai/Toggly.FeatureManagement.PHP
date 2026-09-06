@@ -19,7 +19,7 @@
             <text outputFile="php://stdout"/>
         </report>
         <include>
-            <directory suffix=".php">packages/feature-management-php/src</directory>
+            <directory suffix=".php">src</directory>
             <directory suffix=".php">packages/laravel/src</directory>
             <directory suffix=".php">packages/wordpress/src</directory>
         </include>

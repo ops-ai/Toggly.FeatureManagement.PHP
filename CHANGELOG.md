@@ -7,13 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-06
+
+### Breaking
+- `toggly/feature-management-php` is **core-only**. Laravel and WordPress
+  integrations are no longer shipped inside the core package.
+- Install Laravel via `composer require toggly/laravel` (depends on
+  `toggly/feature-management-php:^1.0`).
+- Install WordPress via `composer require toggly/wordpress` (depends on
+  `toggly/feature-management-php:^1.0`).
+- PHP namespaces are unchanged (`Toggly\FeatureManagement`, `Toggly\Laravel`,
+  `Toggly\WordPress`); only Composer coordinates changed.
+
 ### Changed
-- Restructured the repository into a Composer path monorepo under `packages/`
-  (`toggly/feature-management-php`, `toggly/laravel`, `toggly/wordpress`).
-  Root `composer.json` is a private CI/dev workspace only. Packagist
-  coordinates are unchanged until the 1.0 split (OPS-963): still one published
-  package today; Laravel/WordPress are not submitted to Packagist in this
-  change. PHP namespaces are unchanged.
+- Promoted core package contents to the **repository root** so Packagist
+  continues to track this GitHub URL with root `composer.json` =
+  `toggly/feature-management-php`.
+- Framework sources live under `packages/laravel` and `packages/wordpress`
+  and are subtree-split to read-only mirrors on release.
+- SDK identity version bumped to `1.0.0`.
+
+### Notes
+- Monorepo path layout from OPS-964 is retained for Laravel/WordPress only;
+  `packages/feature-management-php` was removed in favor of root = core.
+- Packagist submit for `toggly/laravel` / `toggly/wordpress` is a human gate
+  after the first mirror split.
 
 ## [0.4.1] - 2026-09-06
 
@@ -103,21 +121,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Cold-start `Invalid signature` when loading snapshots that re-serialized feature models.
-
-## [1.0.0] - 2024-01-XX
-
-### Added
-- Initial release of Toggly Feature Management PHP library
-- Core feature management functionality matching .NET library
-- Signed definitions support with ECDSA signature verification
-- WebSocket support for real-time updates (with polling fallback)
-- Usage statistics collection and reporting
-- Metrics service for measurements, observations, and counters
-- Snapshot providers: Cache (PSR-16), Database (PDO), and File-based
-- Laravel integration with ServiceProvider, Facade, and Middleware
-- WordPress plugin with admin interface and hooks
-- PSR-4, PSR-11, PSR-16, PSR-18, and PSR-17 compliance
-- Feature state change notifications
-- Secure feature authorization support
-- Context providers for user tracking
-- Browser, device, OS, country, and user claims filters for Laravel

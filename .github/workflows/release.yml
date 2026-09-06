@@ -49,8 +49,8 @@ jobs:
         id: release
         uses: ./.github/actions/resolve-release-version
         with:
-          # Version lives on the core package until OPS-963 Packagist/subtree strategy.
-          manifest_path: packages/feature-management-php/composer.json
+          # Root composer.json IS the publishable core package (Packagist URL).
+          manifest_path: composer.json
           registry: packagist
           package_name: toggly/feature-management-php
           release_mode: ${{ github.event.inputs.release_mode || 'publish' }}
@@ -77,12 +77,10 @@ jobs:
           coverage: xdebug
 
       - name: Validate composer.json
-        # --no-check-version: package manifests keep a version field on purpose so
-        # the release version can be resolved from them.
+        # --no-check-version: manifests keep a version field for release resolution.
         # --no-check-lock: root composer.lock is gitignored (workspace regenerates it).
         run: |
           composer validate --strict --no-check-version --no-check-lock
-          composer validate --strict --no-check-version packages/feature-management-php/composer.json
           composer validate --strict --no-check-version packages/laravel/composer.json
           composer validate --strict --no-check-version packages/wordpress/composer.json
 
@@ -101,7 +99,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          # Prefer a PAT that can push tags; fall back to GITHUB_TOKEN (contents: write).
+          # Prefer a PAT that can push tags + cross-repo mirror splits.
+          # GITHUB_TOKEN cannot push to sibling repos; RELEASE_PUSH_TOKEN must
+          # have `repo` scope on ops-ai/Toggly.FeatureManagement.PHP.Laravel and
+          # ops-ai/Toggly.FeatureManagement.PHP.Wordpress (human gate).
           token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
 
       # secrets.* cannot be used directly in `if:` — detect via env in a step.
@@ -140,8 +141,38 @@ jobs:
 
       - name: Commit version bump
         if: needs.validate.outputs.manifest_changed == 'true'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          git add packages/feature-management-php/composer.json
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.VERSION;
+          const root = JSON.parse(fs.readFileSync('composer.json', 'utf8'));
+          root.version = version;
+          if (root['require-dev']) {
+            if (root['require-dev']['toggly/laravel']) root['require-dev']['toggly/laravel'] = version;
+            if (root['require-dev']['toggly/wordpress']) root['require-dev']['toggly/wordpress'] = version;
+          }
+          fs.writeFileSync('composer.json', JSON.stringify(root, null, 4) + '\n');
+          for (const rel of ['packages/laravel/composer.json', 'packages/wordpress/composer.json']) {
+            const json = JSON.parse(fs.readFileSync(rel, 'utf8'));
+            json.version = version;
+            if (json.require && json.require['toggly/feature-management-php']) {
+              const [maj] = version.split('.');
+              json.require['toggly/feature-management-php'] = `^${maj}.0`;
+            }
+            fs.writeFileSync(rel, JSON.stringify(json, null, 4) + '\n');
+          }
+          let sdk = fs.readFileSync('src/SdkIdentity.php', 'utf8');
+          sdk = sdk.replace(
+            /public const SDK_VERSION = '[^']+';/,
+            `public const SDK_VERSION = '${version}';`
+          );
+          fs.writeFileSync('src/SdkIdentity.php', sdk);
+          NODE
+
+          git add composer.json packages/laravel/composer.json packages/wordpress/composer.json src/SdkIdentity.php
           if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
             git commit -S -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
           else
@@ -194,15 +225,20 @@ jobs:
             ### Installation
 
             ```bash
+            # Core only
             composer require toggly/feature-management-php
+
+            # Laravel (pulls core)
+            composer require toggly/laravel
+
+            # WordPress (pulls core)
+            composer require toggly/wordpress
             ```
 
-            ### Features
+            ### Breaking (1.0+)
 
-            - PHP 7.4–8.4 support (CI matrix 8.2–8.4)
-            - Laravel service provider integration
-            - WordPress integration
-            - PSR-compatible interfaces (HTTP client, cache, logging)
+            Laravel and WordPress integrations ship as separate Packagist packages.
+            Core no longer includes `Toggly\Laravel` / `Toggly\WordPress` classes.
 
             ### Requirements
 
@@ -210,15 +246,62 @@ jobs:
 
             ### Links
 
-            - [Packagist](https://packagist.org/packages/toggly/feature-management-php)
+            - [Packagist core](https://packagist.org/packages/toggly/feature-management-php)
+            - [Packagist Laravel](https://packagist.org/packages/toggly/laravel)
+            - [Packagist WordPress](https://packagist.org/packages/toggly/wordpress)
             - [Documentation](https://docs.toggly.io/sdks/php)
           prerelease: ${{ github.event.inputs.prerelease }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  summary:
+  split-mirrors:
     needs: [release, validate]
+    if: needs.validate.outputs.action == 'publish'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - local_path: laravel
+            repository_name: Toggly.FeatureManagement.PHP.Laravel
+          - local_path: wordpress
+            repository_name: Toggly.FeatureManagement.PHP.Wordpress
+    steps:
+      - name: Checkout tagged release
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: v${{ needs.validate.outputs.version }}
+          # Cross-repo push requires RELEASE_PUSH_TOKEN (PAT with repo scope on
+          # both mirror repos). github.token alone cannot push to siblings.
+          token: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
+
+      - name: Require RELEASE_PUSH_TOKEN for mirror push
+        env:
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        run: |
+          if [ -z "${RELEASE_PUSH_TOKEN}" ]; then
+            echo "::error::RELEASE_PUSH_TOKEN is required to push subtree splits to mirror repos (GITHUB_TOKEN cannot push cross-repo)."
+            echo "Human gate: create/update a PAT with repo scope for ops-ai/Toggly.FeatureManagement.PHP.Laravel and ops-ai/Toggly.FeatureManagement.PHP.Wordpress, store as RELEASE_PUSH_TOKEN."
+            exit 1
+          fi
+
+      - name: Split package directory to mirror
+        uses: danharrin/monorepo-split-github-action@v2.4.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        with:
+          package_directory: packages/${{ matrix.package.local_path }}
+          repository_organization: ops-ai
+          repository_name: ${{ matrix.package.repository_name }}
+          branch: main
+          tag: v${{ needs.validate.outputs.version }}
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+  summary:
+    needs: [release, split-mirrors, validate]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -235,9 +318,11 @@ jobs:
           echo "| Release mode | ${{ github.event.inputs.release_mode || 'publish' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Reason | ${{ needs.validate.outputs.reason }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | v${{ needs.validate.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Package | toggly/feature-management-php |" >> $GITHUB_STEP_SUMMARY
+          echo "| Core package | toggly/feature-management-php (repo root) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Laravel mirror | ops-ai/Toggly.FeatureManagement.PHP.Laravel |" >> $GITHUB_STEP_SUMMARY
+          echo "| WordPress mirror | ops-ai/Toggly.FeatureManagement.PHP.Wordpress |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-release | ${{ github.event.inputs.prerelease }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note**: Packagist auto-updates from GitHub tags via webhook." >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: Packagist auto-updates from GitHub tags via webhook on each package repo." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[View on Packagist](https://packagist.org/packages/toggly/feature-management-php)" >> $GITHUB_STEP_SUMMARY
+          echo "[Core on Packagist](https://packagist.org/packages/toggly/feature-management-php)" >> $GITHUB_STEP_SUMMARY

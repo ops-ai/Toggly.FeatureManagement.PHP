@@ -6,15 +6,15 @@ WordPress plugin for Toggly Feature Management (`toggly/wordpress`).
 
 WordPress loads the plugin from the package root file:
 
-- `packages/wordpress/toggly.php` (Composer package root / plugin entry)
+- `toggly.php` (Composer package root / plugin entry)
 
 Copy or symlink this package directory to `wp-content/plugins/toggly/` so
 WordPress finds `toggly.php` at the plugin root. PSR-4 classes live under
 `src/` (`Toggly\WordPress\`).
 
-Until Packagist publishes `toggly/wordpress` (1.0 split), install from this
-monorepo via a Composer path repository, or continue using the historically
-bundled `toggly/feature-management-php` package.
+```bash
+composer require toggly/wordpress
+```
 
 ## Installation
 

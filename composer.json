@@ -1,8 +1,30 @@
 {
-    "name": "toggly/feature-management-php-monorepo",
-    "description": "Dev workspace for Toggly PHP SDK packages (not published to Packagist)",
-    "type": "project",
+    "name": "toggly/feature-management-php",
+    "version": "1.0.0",
+    "description": "Toggly Feature Management library for PHP",
+    "type": "library",
+    "keywords": [
+        "toggly",
+        "feature-flags",
+        "feature-management",
+        "feature-toggles",
+        "ab-testing"
+    ],
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Toggly",
+            "email": "support@toggly.io",
+            "homepage": "https://toggly.io",
+            "role": "Developer"
+        }
+    ],
+    "homepage": "https://docs.toggly.io/sdks/php",
+    "support": {
+        "issues": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP/issues",
+        "source": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP",
+        "docs": "https://docs.toggly.io/sdks/php"
+    },
     "repositories": [
         {
             "type": "path",
@@ -10,9 +32,12 @@
         }
     ],
     "require": {
-        "toggly/feature-management-php": "0.4.1",
-        "toggly/laravel": "0.4.1",
-        "toggly/wordpress": "0.4.1"
+        "php": "^7.4|^8.0|^8.1|^8.2|^8.3|^8.4",
+        "psr/container": "^1.0|^2.0",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/simple-cache": "^1.0|^2.0|^3.0",
+        "psr/log": "^1.0|^2.0|^3.0"
     },
     "require-dev": {
         "google/protobuf": "^3.25|^4.0",
@@ -20,21 +45,38 @@
         "illuminate/contracts": "^11.0",
         "mongodb/mongodb": "^2.0",
         "phpunit/phpunit": "^9.0|^10.0",
-        "textalk/websocket": "^1.6"
+        "textalk/websocket": "^1.6",
+        "toggly/laravel": "1.0.0",
+        "toggly/wordpress": "1.0.0"
     },
-    "scripts": {
-        "test": "phpunit"
+    "suggest": {
+        "ext-grpc": "Native gRPC transport for Usage.SendStats / Metrics.SendMetrics (soft-fail without it)",
+        "google/protobuf": "Protobuf runtime for optional gRPC telemetry messages (^3.0|^4.0)",
+        "react/socket": "For WebSocket support",
+        "guzzlehttp/guzzle": "PSR-18 HTTP client implementation",
+        "symfony/http-client": "Alternative PSR-18 HTTP client",
+        "mongodb/mongodb": "For MongoDB storage provider (^2.0)",
+        "toggly/laravel": "Laravel integration (Packagist: toggly/laravel)",
+        "toggly/wordpress": "WordPress integration (Packagist: toggly/wordpress)"
+    },
+    "autoload": {
+        "psr-4": {
+            "Toggly\\FeatureManagement\\": "src/"
+        }
     },
     "autoload-dev": {
         "psr-4": {
             "Toggly\\FeatureManagement\\Tests\\": "tests/"
         }
     },
+    "scripts": {
+        "test": "phpunit"
+    },
     "config": {
         "sort-packages": true,
         "preferred-install": "dist",
         "optimize-autoloader": true
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }

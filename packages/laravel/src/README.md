@@ -8,10 +8,6 @@ Laravel integration for Toggly Feature Management.
 composer require toggly/laravel
 ```
 
-Until Packagist publishes `toggly/laravel` (1.0 split), install from this
-monorepo via a Composer path repository, or continue using
-`toggly/feature-management-php` which historically bundled Laravel classes.
-
 ## Configuration
 
 1. **Register the service provider** in `config/app.php`:

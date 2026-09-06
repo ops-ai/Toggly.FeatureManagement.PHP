@@ -122,7 +122,8 @@ The library is organized into three main parts:
 - PSR interfaces (container, http-client, http-factory, simple-cache, log)
 
 ### Optional
-- ReactPHP (for WebSocket support)
+- **WebSocket Implementation**: Raw `stream_socket_client` handshake (no ReactPHP). Only used in long-running processes; PHP-FPM skips automatically.
+
 - gRPC extension (for gRPC support)
 - OpenSSL extension (for signature verification)
 
@@ -143,11 +144,12 @@ Unit tests and integration tests should be added. The structure is ready for:
 
 ## Known Limitations
 
-1. **WebSocket Implementation**: Currently a placeholder - would need ReactPHP or similar for full implementation
-2. **gRPC Support**: Not implemented - would require PHP gRPC extension
+1. **WebSocket**: Implemented via raw streams; only active in long-running processes (skipped under PHP-FPM)
+2. **gRPC telemetry**: Optional — requires `ext-grpc` + `google/protobuf`; HTTPS JSON fallback otherwise
 3. **ECDSA Key Construction**: Uses custom ASN.1 encoding - could be improved with phpseclib
-4. **Country Filter**: Placeholder - requires geolocation service integration
+4. **Country Filter**: Requires `request.country` (or equivalent) in evaluation context from the host
 5. **Scheduling**: Relies on external schedulers (Laravel Scheduler, WP Cron)
+6. **Entity context**: Per-entity registration APIs not shipped yet (OPS-679)
 
 ## Next Steps
 

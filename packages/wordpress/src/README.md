@@ -18,16 +18,15 @@ composer require toggly/wordpress
 
 ## Installation
 
-1. **Download or clone** the plugin to `wp-content/plugins/toggly/`
-
-2. **Install dependencies**:
-
 ```bash
-cd wp-content/plugins/toggly
-composer install
+composer require toggly/wordpress
 ```
 
-3. **Activate** the plugin in WordPress admin (Plugins > Installed Plugins)
+Place the package so WordPress loads `toggly.php` (typically
+`wp-content/plugins/toggly/`), then activate **Toggly Feature Management**.
+
+Alternatively, without Composer in the WP tree: copy or symlink this package
+directory to `wp-content/plugins/toggly/` and run `composer install` there.
 
 ## Configuration
 

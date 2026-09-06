@@ -41,9 +41,10 @@ composer require toggly/laravel
 composer require toggly/wordpress
 ```
 
-`toggly/laravel` and `toggly/wordpress` are published from mirror repos after
-the first `v1.0.0` release split + Packagist submit. Until then, use this
-monorepo path repositories (see root `composer.json`) or wait for that release.
+`toggly/laravel` and `toggly/wordpress` are published on Packagist from the
+mirror repos (`ops-ai/Toggly.FeatureManagement.PHP.Laravel` and
+`ops-ai/Toggly.FeatureManagement.PHP.Wordpress`). For local monorepo development,
+path repositories under `packages/*` are configured in the root `composer.json`.
 
 For non-Composer WordPress installs, copy or symlink the `toggly/wordpress`
 package directory to `wp-content/plugins/toggly/` so WordPress loads `toggly.php`.
@@ -68,22 +69,16 @@ from `toggly/feature-management-php` alone, also require `toggly/laravel` or
 
 ### Laravel
 
-1. **Register the service provider** in `config/app.php`:
+Package auto-discovery registers the service provider and `Toggly` facade.
+Manual `config/app.php` registration is only needed if auto-discovery is disabled.
 
-```php
-'providers' => [
-    // ...
-    Toggly\Laravel\ServiceProvider::class,
-],
-```
-
-2. **Publish the configuration**:
+1. **Publish the configuration**:
 
 ```bash
 php artisan vendor:publish --tag=toggly-config
 ```
 
-3. **Configure** in `.env`:
+2. **Configure** in `.env`:
 
 ```env
 TOGGLY_APP_KEY=your-app-key
@@ -91,37 +86,38 @@ TOGGLY_ENVIRONMENT=Production
 TOGGLY_USE_SIGNED_DEFINITIONS=false
 ```
 
-4. **Use in your code**:
+3. **Use in your code**:
 
 ```php
 use Toggly\Laravel\Facades\Toggly;
+use Toggly\FeatureManagement\Contracts\FeatureStateServiceInterface;
+use Toggly\FeatureManagement\Core\MetricsService;
 
 // Check if feature is enabled
 if (Toggly::isEnabled('new-checkout')) {
     return view('checkout.v2');
 }
 
-// With context
-$enabled = Toggly::isEnabledFor('premium-feature', [
-    'userId' => $user->id,
-    'plan' => $user->plan
+// With evaluation context (identity / groups / claims / request preferred;
+// legacy userId is still accepted)
+$enabled = Toggly::isEnabled('premium-feature', [
+    'identity' => (string) $user->id,
+    'groups' => $user->groups ?? [],
 ]);
 
-// State change handler
-Toggly::whenFeatureTurnsOn('new-api', function() {
+// State change handlers live on FeatureStateService (not the facade)
+app(FeatureStateServiceInterface::class)->whenFeatureTurnsOn('new-api', function () {
     // Initialize new API
 });
 
-// Record usage
-Toggly::recordUsage('feature-key');
-
-// Record metrics
-Toggly::measure('checkout-completed', 125.50);
-Toggly::observe('active-users', 1500);
-Toggly::incrementCounter('api-calls', 1);
+// Metrics live on MetricsService
+$metrics = app(MetricsService::class);
+$metrics->measure('checkout-completed', 125.50);
+$metrics->observe('active-users', 1500);
+$metrics->incrementCounter('api-calls', 1);
 ```
 
-5. **Use middleware** in routes:
+4. **Use middleware** in routes (alias `feature` if not already registered):
 
 ```php
 Route::get('/new-feature', function () {

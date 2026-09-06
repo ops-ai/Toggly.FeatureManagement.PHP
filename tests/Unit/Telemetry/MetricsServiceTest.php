@@ -97,4 +97,57 @@ class MetricsServiceTest extends TestCase
         $service->sendMetrics();
         $this->assertSame(1, $grpc->calls);
     }
+
+    public function testRegistryReentrancyDuringSendDoesNotDoubleClear(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $featureProvider = $this->createMock(FeatureProviderInterface::class);
+        $featureProvider->method('getFeaturesForMetric')->willReturn(null);
+
+        $grpc = new class implements MetricsGrpcClient {
+            public int $calls = 0;
+            /** @var array<string, mixed>|null */
+            public $captured = null;
+
+            public function sendMetrics(array $payload, array $metadata = []): void
+            {
+                $this->calls++;
+                $this->captured = $payload;
+            }
+
+            public function close(): void
+            {
+            }
+        };
+
+        $registry = new MetricsRegistryService();
+        $service = new MetricsService(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            $featureProvider,
+            $registry,
+            new NullLogger(),
+            $grpc
+        );
+
+        $reentrantCalls = 0;
+        $registry->registerMeasurements(function () use ($service, &$reentrantCalls): array {
+            $reentrantCalls++;
+            // Re-enter while outer sendMetrics is already in progress.
+            $service->sendMetrics();
+            return ['from-registry' => 3.0];
+        });
+
+        $service->measure('direct', 1.0);
+        $service->sendMetrics();
+
+        $this->assertSame(1, $reentrantCalls);
+        $this->assertSame(1, $grpc->calls);
+        $this->assertNotNull($grpc->captured);
+
+        $metrics = array_column($grpc->captured['stats'], 'metric');
+        $this->assertContains('direct', $metrics);
+        $this->assertContains('from-registry', $metrics);
+        $this->assertNull($service->peekPayload());
+    }
 }

@@ -198,42 +198,46 @@ class MetricsService implements MetricsServiceInterface
             return;
         }
 
-        $registryMeasurements = $this->metricsRegistry->getMeasurementValues();
-        foreach ($registryMeasurements as $key => $value) {
-            $this->incrementMeasurement($key, null, $value, true);
-        }
-
-        $registryCounters = $this->metricsRegistry->getCounterValues();
-        foreach ($registryCounters as $key => $value) {
-            $this->incrementMetricCounter($key, null, $value, true);
-        }
-
-        $registryObservations = $this->metricsRegistry->getObservationValues();
-        foreach ($registryObservations as $key => $data) {
-            $this->storeObservation($data[0], $key, null, $data[1], true);
-        }
-
-        $payload = $this->buildPayload(true);
-        if ($payload === null) {
-            $this->logger->debug('No metrics to send');
-            return;
-        }
-
+        // Set immediately after the guard so registry callbacks that re-enter
+        // sendMetrics cannot double-buildPayload(true) and clear in-flight data.
         $this->sendInProgress = true;
 
         try {
-            if ($this->grpcClient !== null) {
-                $this->grpcClient->sendMetrics($payload);
-            } else {
-                $this->httpClient->post('api/metrics', $this->toHttpJsonPayload($payload));
+            $registryMeasurements = $this->metricsRegistry->getMeasurementValues();
+            foreach ($registryMeasurements as $key => $value) {
+                $this->incrementMeasurement($key, null, $value, true);
             }
-            $this->lastSend = time();
-            $this->logger->debug('Metrics sent successfully', [
-                'transport' => $this->grpcClient !== null ? 'grpc' : 'http',
-            ]);
-        } catch (\Throwable $e) {
-            $this->restoreFromPayload($payload);
-            $this->logger->error('Error sending metrics to Toggly', ['error' => $e->getMessage()]);
+
+            $registryCounters = $this->metricsRegistry->getCounterValues();
+            foreach ($registryCounters as $key => $value) {
+                $this->incrementMetricCounter($key, null, $value, true);
+            }
+
+            $registryObservations = $this->metricsRegistry->getObservationValues();
+            foreach ($registryObservations as $key => $data) {
+                $this->storeObservation($data[0], $key, null, $data[1], true);
+            }
+
+            $payload = $this->buildPayload(true);
+            if ($payload === null) {
+                $this->logger->debug('No metrics to send');
+                return;
+            }
+
+            try {
+                if ($this->grpcClient !== null) {
+                    $this->grpcClient->sendMetrics($payload);
+                } else {
+                    $this->httpClient->post('api/metrics', $this->toHttpJsonPayload($payload));
+                }
+                $this->lastSend = time();
+                $this->logger->debug('Metrics sent successfully', [
+                    'transport' => $this->grpcClient !== null ? 'grpc' : 'http',
+                ]);
+            } catch (\Throwable $e) {
+                $this->restoreFromPayload($payload);
+                $this->logger->error('Error sending metrics to Toggly', ['error' => $e->getMessage()]);
+            }
         } finally {
             $this->sendInProgress = false;
         }

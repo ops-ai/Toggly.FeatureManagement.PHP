@@ -141,4 +141,57 @@ class UsageStatsProviderTest extends TestCase
         $this->assertSame('app.toggly.io:443', GrpcClients::grpcTarget('https://app.toggly.io/'));
         $this->assertSame('example.com:8443', GrpcClients::grpcTarget('https://example.com:8443/path'));
     }
+
+    public function testFailedSendRestoresUniqueUsageMaps(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $grpc = new class implements UsageGrpcClient {
+            public function sendStats(array $payload, array $metadata = []): void
+            {
+                throw new \RuntimeException('send failed');
+            }
+
+            public function close(): void
+            {
+            }
+        };
+
+        $userId = 'user-restore-1';
+        $context = $this->createMock(FeatureContextProviderInterface::class);
+        $context->method('accessedInRequest')->willReturn(false);
+        $context->method('getContextIdentifier')->willReturn($userId);
+
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            $context,
+            new NullLogger(),
+            $grpc
+        );
+
+        $provider->recordCheck('FeatureA', true);
+        $provider->recordCheck('FeatureA', false);
+        $provider->recordUsage('FeatureA');
+
+        $before = $provider->peekPayload();
+        $this->assertNotNull($before);
+        $this->assertSame(1, $before['stats'][0]['uniqueContextIdentifierEnabledCount']);
+        $this->assertSame(1, $before['stats'][0]['uniqueContextIdentifierDisabledCount']);
+        $this->assertSame(1, $before['stats'][0]['uniqueUsersUsedCount']);
+
+        $provider->sendStats();
+
+        $afterFailure = $provider->peekPayload();
+        $this->assertNotNull($afterFailure);
+        $this->assertSame(1, $afterFailure['stats'][0]['uniqueContextIdentifierEnabledCount']);
+        $this->assertSame(1, $afterFailure['stats'][0]['uniqueContextIdentifierDisabledCount']);
+        $this->assertSame(1, $afterFailure['stats'][0]['uniqueUsersUsedCount']);
+
+        // Same identity must remain a single unique entry (hash sets restored, not counts alone).
+        $provider->recordCheck('FeatureA', true);
+        $afterRerecord = $provider->peekPayload();
+        $this->assertNotNull($afterRerecord);
+        $this->assertSame(1, $afterRerecord['stats'][0]['uniqueContextIdentifierEnabledCount']);
+        $this->assertSame(2, $afterRerecord['stats'][0]['variantStats']['enabled']['checkCount']);
+    }
 }

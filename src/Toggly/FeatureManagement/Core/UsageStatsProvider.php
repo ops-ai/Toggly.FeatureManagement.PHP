@@ -214,6 +214,13 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             return;
         }
 
+        // Snapshot unique-usage hash sets before buildPayload clears them.
+        // Wire payloads only carry counts for these maps, so restore must use
+        // in-memory snapshots (same idea as .NET ConcurrentHashSet clones).
+        $uniqueUsageEnabledSnapshot = $this->uniqueUsageEnabled;
+        $uniqueUsageDisabledSnapshot = $this->uniqueUsageDisabled;
+        $uniqueUsageUsedSnapshot = $this->uniqueUsageUsed;
+
         $payload = $this->buildPayload(true);
         if ($payload === null) {
             $this->logger->debug('No stats to send');
@@ -234,6 +241,11 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             ]);
         } catch (\Throwable $e) {
             $this->restoreFromPayload($payload);
+            $this->restoreUniqueUsageMaps(
+                $uniqueUsageEnabledSnapshot,
+                $uniqueUsageDisabledSnapshot,
+                $uniqueUsageUsedSnapshot
+            );
             $this->logger->error('Error sending stats to Toggly', ['error' => $e->getMessage()]);
         } finally {
             $this->sendInProgress = false;
@@ -464,6 +476,36 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         }
         foreach ($payload['uniqueUserHashes'] ?? [] as $hash) {
             $this->applicationUniqueUserHashes[(int) $hash] = true;
+        }
+    }
+
+    /**
+     * Union-merge unique-usage hash-set snapshots taken at send time.
+     *
+     * @param array<string, array<int, true>> $enabled
+     * @param array<string, array<int, true>> $disabled
+     * @param array<string, array<int, true>> $used
+     */
+    private function restoreUniqueUsageMaps(array $enabled, array $disabled, array $used): void
+    {
+        $this->mergeUniqueUsageMap($this->uniqueUsageEnabled, $enabled);
+        $this->mergeUniqueUsageMap($this->uniqueUsageDisabled, $disabled);
+        $this->mergeUniqueUsageMap($this->uniqueUsageUsed, $used);
+    }
+
+    /**
+     * @param array<string, array<int, true>> $target
+     * @param array<string, array<int, true>> $snapshot
+     */
+    private function mergeUniqueUsageMap(array &$target, array $snapshot): void
+    {
+        foreach ($snapshot as $featureKey => $hashes) {
+            if (!isset($target[$featureKey])) {
+                $target[$featureKey] = [];
+            }
+            foreach ($hashes as $hash => $_) {
+                $target[$featureKey][(int) $hash] = true;
+            }
         }
     }
 }

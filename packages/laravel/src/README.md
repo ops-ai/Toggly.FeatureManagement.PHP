@@ -5,8 +5,12 @@ Laravel integration for Toggly Feature Management.
 ## Installation
 
 ```bash
-composer require toggly/feature-management-php
+composer require toggly/laravel
 ```
+
+Until Packagist publishes `toggly/laravel` (1.0 split), install from this
+monorepo via a Composer path repository, or continue using
+`toggly/feature-management-php` which historically bundled Laravel classes.
 
 ## Configuration
 
@@ -217,7 +221,7 @@ $this->app->singleton(FeatureContextProviderInterface::class, MyContextProvider:
 
 ## Legacy filter classes
 
-Classes under `src/Toggly/Laravel/Filters/` are **legacy** and are not wired into
+Classes under `Filters/` are **legacy** and are not wired into
 core evaluation. Segment filters (`BrowserFamily`, `Country`, `OS`, …) and
 `UserClaims` are implemented in
 `Toggly\FeatureManagement\Core\FeatureManager` for filter-parity. Prefer

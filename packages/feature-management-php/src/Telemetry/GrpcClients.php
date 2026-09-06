@@ -86,7 +86,7 @@ final class GrpcClients
         }
 
         try {
-            require_once dirname(__DIR__, 4) . '/resources/grpc/native_grpc_stubs.php';
+            require_once dirname(__DIR__, 2) . '/resources/grpc/native_grpc_stubs.php';
 
             $target = self::grpcTarget($metricsBaseUrl !== '' ? $metricsBaseUrl : self::DEFAULT_METRICS_BASE_URL);
             $ua = $userAgent !== null && $userAgent !== '' ? $userAgent : SdkIdentity::userAgent();

@@ -98,5 +98,5 @@ if ($featureManager->isEnabled('my-feature')) {
 
 - Read the [README.md](README.md) for detailed documentation
 - Check [IMPLEMENTATION.md](IMPLEMENTATION.md) for architecture details
-- See Laravel README: `src/Toggly/Laravel/README.md`
-- See WordPress README: `src/Toggly/WordPress/README.md`
+- See Laravel README: `packages/laravel/src/README.md`
+- See WordPress README: `packages/wordpress/src/README.md`

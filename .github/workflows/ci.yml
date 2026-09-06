@@ -45,18 +45,23 @@ jobs:
             ${{ runner.os }}-composer-${{ matrix.php-version }}-
             ${{ runner.os }}-composer-
 
-      - name: Install dependencies
-        run: composer update --prefer-dist --no-progress --no-interaction --prefer-stable
+      - name: Validate package composer.json files
+        # --no-check-version: package manifests keep a version field on purpose so
+        # release.yml can resolve the release version from them.
+        # --no-check-lock: root composer.lock is gitignored (workspace regenerates it).
+        run: |
+          composer validate --strict --no-check-version --no-check-lock
+          composer validate --strict --no-check-version packages/feature-management-php/composer.json
+          composer validate --strict --no-check-version packages/laravel/composer.json
+          composer validate --strict --no-check-version packages/wordpress/composer.json
 
-      - name: Validate composer.json
-        # --no-check-version: the manifest keeps a version field on purpose so
-        # release.yml can resolve the release version from it.
-        run: composer validate --strict --no-check-version
+      - name: Install dependencies (path repos)
+        run: composer update --prefer-dist --no-progress --no-interaction --prefer-stable
 
       - name: Check code style
         run: |
           if [ -f "vendor/bin/phpcs" ]; then
-            vendor/bin/phpcs --standard=PSR12 src/ || echo "Code style check completed with warnings"
+            vendor/bin/phpcs --standard=PSR12 packages/*/src/ || echo "Code style check completed with warnings"
           else
             echo "PHP_CodeSniffer not installed, skipping code style check"
           fi
@@ -153,7 +158,7 @@ jobs:
             -Dsonar.projectKey=toggly-sdks-php
             -Dsonar.organization=ops-ai
             -Dsonar.projectName="Toggly SDKs - PHP"
-            -Dsonar.sources=src
+            -Dsonar.sources=packages
             -Dsonar.tests=tests
             -Dsonar.exclusions=**/vendor/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
@@ -176,7 +181,7 @@ jobs:
           args: >
             -Dsonar.projectKey=toggly-sdks-php
             -Dsonar.projectName="Toggly SDKs - PHP"
-            -Dsonar.sources=src
+            -Dsonar.sources=packages
             -Dsonar.tests=tests
             -Dsonar.exclusions=**/vendor/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
@@ -252,10 +257,10 @@ jobs:
           echo "- PHP 8.3" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.4" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Components Tested" >> $GITHUB_STEP_SUMMARY
-          echo "- Core Feature Management SDK" >> $GITHUB_STEP_SUMMARY
-          echo "- Laravel Integration" >> $GITHUB_STEP_SUMMARY
-          echo "- WordPress Integration" >> $GITHUB_STEP_SUMMARY
+          echo "### Packages Tested (path monorepo)" >> $GITHUB_STEP_SUMMARY
+          echo "- toggly/feature-management-php (core)" >> $GITHUB_STEP_SUMMARY
+          echo "- toggly/laravel" >> $GITHUB_STEP_SUMMARY
+          echo "- toggly/wordpress" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Check SonarCloud for detailed results: https://sonarcloud.io/project/overview?id=toggly-sdks-php" >> $GITHUB_STEP_SUMMARY
           echo "Check SonarQube Server for detailed results: ${{ secrets.SONAR_HOST_URL }}/dashboard?id=toggly-sdks-php" >> $GITHUB_STEP_SUMMARY

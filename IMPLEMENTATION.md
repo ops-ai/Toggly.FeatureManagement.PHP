@@ -6,9 +6,9 @@ This document summarizes the PHP Toggly Feature Management library implementatio
 
 The library is organized into three main parts:
 
-1. **Core Library** (`src/Toggly/FeatureManagement/`): Framework-agnostic core functionality
-2. **Laravel Integration** (`src/Toggly/Laravel/`): Laravel-specific service provider, facade, middleware, and filters
-3. **WordPress Plugin** (`src/Toggly/WordPress/`): WordPress plugin with admin interface
+1. **Core Library** (`packages/feature-management-php/`): Framework-agnostic core functionality
+2. **Laravel Integration** (`packages/laravel/`): Laravel-specific service provider, facade, middleware, and filters
+3. **WordPress Plugin** (`packages/wordpress/`): WordPress plugin with admin interface
 
 ## Core Components Implemented
 
@@ -71,7 +71,7 @@ The library is organized into three main parts:
 ### Filters (legacy — not the evaluation path)
 - ⚠️ `BrowserFamilyFilter`, `BrowserLanguageFilter`, `CountryFilter`,
   `DeviceTypeFilter`, `OSFilter`, `UserClaimsFilter` under
-  `src/Toggly/Laravel/Filters/` are legacy helpers. Core evaluation lives in
+  `packages/laravel/src/Filters/` are legacy helpers. Core evaluation lives in
   `FeatureManager` (filter-parity contract).
 
 ## WordPress Integration

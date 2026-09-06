@@ -49,7 +49,8 @@ jobs:
         id: release
         uses: ./.github/actions/resolve-release-version
         with:
-          manifest_path: composer.json
+          # Version lives on the core package until OPS-963 Packagist/subtree strategy.
+          manifest_path: packages/feature-management-php/composer.json
           registry: packagist
           package_name: toggly/feature-management-php
           release_mode: ${{ github.event.inputs.release_mode || 'publish' }}
@@ -76,12 +77,17 @@ jobs:
           coverage: xdebug
 
       - name: Validate composer.json
-        # --no-check-version: the manifest keeps a version field on purpose so
-        # the release version can be resolved from it.
-        run: composer validate --strict --no-check-version
+        # --no-check-version: package manifests keep a version field on purpose so
+        # the release version can be resolved from them.
+        # --no-check-lock: root composer.lock is gitignored (workspace regenerates it).
+        run: |
+          composer validate --strict --no-check-version --no-check-lock
+          composer validate --strict --no-check-version packages/feature-management-php/composer.json
+          composer validate --strict --no-check-version packages/laravel/composer.json
+          composer validate --strict --no-check-version packages/wordpress/composer.json
 
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress
+        run: composer update --prefer-dist --no-progress --no-interaction --prefer-stable
 
       - name: Run tests
         run: vendor/bin/phpunit
@@ -135,7 +141,7 @@ jobs:
       - name: Commit version bump
         if: needs.validate.outputs.manifest_changed == 'true'
         run: |
-          git add composer.json
+          git add packages/feature-management-php/composer.json
           if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
             git commit -S -m "Bumped PHP SDK to v${{ needs.validate.outputs.version }} (auto_bump) [skip ci]"
           else

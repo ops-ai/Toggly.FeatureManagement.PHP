@@ -1,0 +1,58 @@
+{
+    "name": "toggly/laravel",
+    "version": "0.4.1",
+    "description": "Toggly Feature Management Laravel integration",
+    "type": "library",
+    "keywords": [
+        "toggly",
+        "feature-flags",
+        "feature-management",
+        "laravel"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Toggly",
+            "email": "support@toggly.io",
+            "homepage": "https://toggly.io",
+            "role": "Developer"
+        }
+    ],
+    "homepage": "https://docs.toggly.io/sdks/php",
+    "support": {
+        "issues": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP/issues",
+        "source": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP",
+        "docs": "https://docs.toggly.io/sdks/php"
+    },
+    "require": {
+        "php": "^7.4|^8.0|^8.1|^8.2|^8.3|^8.4",
+        "toggly/feature-management-php": "^0.4.1"
+    },
+    "suggest": {
+        "illuminate/support": "Laravel support package (^10.0|^11.0|^12.0)",
+        "illuminate/http": "Laravel HTTP integration (^10.0|^11.0|^12.0)",
+        "illuminate/cache": "Laravel cache storage provider (^10.0|^11.0|^12.0)"
+    },
+    "autoload": {
+        "psr-4": {
+            "Toggly\\Laravel\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Toggly\\Laravel\\ServiceProvider"
+            ],
+            "aliases": {
+                "Toggly": "Toggly\\Laravel\\Facades\\Toggly"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "preferred-install": "dist",
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

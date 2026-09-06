@@ -18,39 +18,39 @@ message FeatureStat {
     string environment = 2;
     google.protobuf.Timestamp time = 3;
     repeated StatMessage stats = 4;
-	int32 totalUniqueUsers = 5;
-	optional string instanceName = 6;
-	optional google.protobuf.Timestamp processStartTime = 7;
-	optional string appVersion = 8;
-	repeated int32 uniqueUserHashes = 9; // Application-level unique user ID hashes (all users, regardless of feature usage)
+    int32 totalUniqueUsers = 5;
+    optional string instanceName = 6;
+    optional google.protobuf.Timestamp processStartTime = 7;
+    optional string appVersion = 8;
+    repeated int32 uniqueUserHashes = 9; // Application-level unique user ID hashes (all users, regardless of feature usage)
 }
 
 message StatMessage {
-	string feature = 1;
-	int32 enabledCount = 2 [deprecated = true]; // Legacy: use variantStats instead
-	int32 disabledCount = 3 [deprecated = true]; // Legacy: use variantStats instead
-	int32 uniqueContextIdentifierEnabledCount = 4; //Ex: unique username, IP address
-	int32 uniqueContextIdentifierDisabledCount = 5;
-	int32 uniqueRequestEnabledCount = 6 [deprecated = true]; // Legacy: use variantStats instead
-	int32 uniqueRequestDisabledCount = 7 [deprecated = true]; // Legacy: use variantStats instead
-	int32 usedCount = 8 [deprecated = true]; // Legacy: use variantStats instead
-	int32 uniqueUsersUsedCount = 9;
-	repeated int32 uniqueUserHashes = 10; // Unique user ID hashes for "used" tracking (aggregated per feature via Redis → VM)
-	
-	// Multi-variate support - all new metrics should use this
-	map<string, VariantStats> variantStats = 11; // Key: variant name (e.g., "control", "variant_a", "enabled", "disabled")
-	
-	// Unique user tracking for "viewed" metric (per feature, not per variant)
-	repeated int32 uniqueViewedUserHashes = 12; // Unique user ID hashes for "viewed" tracking (aggregated per feature via Redis → VM)
+    string feature = 1;
+    int32 enabledCount = 2 [deprecated = true]; // Legacy: use variantStats instead
+    int32 disabledCount = 3 [deprecated = true]; // Legacy: use variantStats instead
+    int32 uniqueContextIdentifierEnabledCount = 4; //Ex: unique username, IP address
+    int32 uniqueContextIdentifierDisabledCount = 5;
+    int32 uniqueRequestEnabledCount = 6 [deprecated = true]; // Legacy: use variantStats instead
+    int32 uniqueRequestDisabledCount = 7 [deprecated = true]; // Legacy: use variantStats instead
+    int32 usedCount = 8 [deprecated = true]; // Legacy: use variantStats instead
+    int32 uniqueUsersUsedCount = 9;
+    repeated int32 uniqueUserHashes = 10; // Unique user ID hashes for "used" tracking (aggregated per feature via Redis → VM)
+
+    // Multi-variate support - all new metrics should use this
+    map<string, VariantStats> variantStats = 11; // Key: variant name (e.g., "control", "variant_a", "enabled", "disabled")
+
+    // Unique user tracking for "viewed" metric (per feature, not per variant)
+    repeated int32 uniqueViewedUserHashes = 12; // Unique user ID hashes for "viewed" tracking (aggregated per feature via Redis → VM)
 }
 
 message VariantStats {
-	int32 checkCount = 1; // Number of times this variant was checked
-	int32 requestCount = 2; // Unique requests for this variant
-	int32 usedCount = 3; // Number of times this variant was used
-	int32 viewedCount = 4; // NEW: Number of times this variant was viewed
+    int32 checkCount = 1; // Number of times this variant was checked
+    int32 requestCount = 2; // Unique requests for this variant
+    int32 usedCount = 3; // Number of times this variant was used
+    int32 viewedCount = 4; // NEW: Number of times this variant was viewed
 }
 
 message StatResult {
-	int32 featureCount = 1;
+    int32 featureCount = 1;
 }

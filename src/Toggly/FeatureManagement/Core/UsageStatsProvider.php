@@ -29,7 +29,7 @@ class UsageStatsProvider implements UsageStatsProviderInterface
     private ?FeatureContextProviderInterface $contextProvider;
     private LoggerInterface $logger;
     private ?UsageGrpcClient $grpcClient;
-    private bool $ownGrpcClients;
+    private ?GrpcClients $ownedGrpcClients = null;
     private int $processStartTime;
 
     private const MAX_UNIQUE_USER_HASHES_PER_FEATURE = 10000;
@@ -75,15 +75,14 @@ class UsageStatsProvider implements UsageStatsProviderInterface
 
         if ($grpcClient !== null) {
             $this->grpcClient = $grpcClient;
-            $this->ownGrpcClients = false;
         } else {
             $clients = GrpcClients::create(
                 $this->resolveMetricsBaseUrl(),
                 SdkIdentity::userAgent(),
                 $this->logger
             );
+            $this->ownedGrpcClients = $clients;
             $this->grpcClient = $clients !== null ? $clients->usage() : null;
-            $this->ownGrpcClients = $clients !== null;
             if ($clients === null && !GrpcClients::isAvailable()) {
                 $this->logger->debug(
                     'Usage gRPC unavailable (need ext-grpc + google/protobuf); using HTTPS JSON fallback'
@@ -100,6 +99,14 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             $this->flush();
         } catch (\Throwable $e) {
             // Best-effort shutdown flush
+        }
+        if ($this->ownedGrpcClients !== null) {
+            try {
+                $this->ownedGrpcClients->close();
+            } catch (\Throwable $e) {
+                // Best-effort
+            }
+            $this->ownedGrpcClients = null;
         }
     }
 
@@ -283,8 +290,12 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         if (!isset($this->uniqueUserHashes[$featureKey])) {
             $this->uniqueUserHashes[$featureKey] = [];
         }
-        if (count($this->uniqueUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE) {
+        if (
+            !isset($this->uniqueUserHashes[$featureKey][$hash])
+            && count($this->uniqueUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE
+        ) {
             $this->logger->warning('Unique user hash limit reached for feature', ['feature' => $featureKey]);
+            return;
         }
         $this->uniqueUserHashes[$featureKey][$hash] = true;
     }
@@ -298,7 +309,10 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         if (!isset($this->uniqueViewedUserHashes[$featureKey])) {
             $this->uniqueViewedUserHashes[$featureKey] = [];
         }
-        if (count($this->uniqueViewedUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE) {
+        if (
+            !isset($this->uniqueViewedUserHashes[$featureKey][$hash])
+            && count($this->uniqueViewedUserHashes[$featureKey]) >= self::MAX_UNIQUE_USER_HASHES_PER_FEATURE
+        ) {
             $this->logger->warning('Unique viewed user hash limit reached for feature', ['feature' => $featureKey]);
             return;
         }
@@ -311,8 +325,12 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             return;
         }
         $hash = IdentityHasher::hashIdentity($userId);
-        if (count($this->applicationUniqueUserHashes) >= self::MAX_APPLICATION_UNIQUE_USER_HASHES) {
+        if (
+            !isset($this->applicationUniqueUserHashes[$hash])
+            && count($this->applicationUniqueUserHashes) >= self::MAX_APPLICATION_UNIQUE_USER_HASHES
+        ) {
             $this->logger->warning('Application-level unique user hash limit reached');
+            return;
         }
         $this->applicationUniqueUserHashes[$hash] = true;
     }

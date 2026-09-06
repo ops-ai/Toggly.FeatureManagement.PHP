@@ -28,6 +28,7 @@ class MetricsService implements MetricsServiceInterface
     private MetricsRegistryService $metricsRegistry;
     private LoggerInterface $logger;
     private ?MetricsGrpcClient $grpcClient;
+    private ?GrpcClients $ownedGrpcClients = null;
 
     /**
      * @var array<string, array<string, float>> Measurements by metric key, variant-keyed
@@ -70,6 +71,7 @@ class MetricsService implements MetricsServiceInterface
                 SdkIdentity::userAgent(),
                 $this->logger
             );
+            $this->ownedGrpcClients = $clients;
             $this->grpcClient = $clients !== null ? $clients->metrics() : null;
             if ($clients === null && !GrpcClients::isAvailable()) {
                 $this->logger->debug(
@@ -87,6 +89,14 @@ class MetricsService implements MetricsServiceInterface
             $this->flush();
         } catch (\Throwable $e) {
             // Best-effort
+        }
+        if ($this->ownedGrpcClients !== null) {
+            try {
+                $this->ownedGrpcClients->close();
+            } catch (\Throwable $e) {
+                // Best-effort
+            }
+            $this->ownedGrpcClients = null;
         }
     }
 

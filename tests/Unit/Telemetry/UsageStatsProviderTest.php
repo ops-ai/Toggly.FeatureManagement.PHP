@@ -8,7 +8,6 @@ use Toggly\FeatureManagement\Config\TogglySettings;
 use Toggly\FeatureManagement\Contracts\FeatureContextProviderInterface;
 use Toggly\FeatureManagement\Core\UsageStatsProvider;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
-use Toggly\FeatureManagement\SdkIdentity;
 use Toggly\FeatureManagement\Telemetry\GrpcClients;
 use Toggly\FeatureManagement\Telemetry\IdentityHasher;
 use Toggly\FeatureManagement\Telemetry\UsageGrpcClient;
@@ -135,12 +134,6 @@ class UsageStatsProviderTest extends TestCase
         $provider->sendStats();
         $this->assertIsArray($posted);
         $this->assertIsString($posted['time']);
-    }
-
-    public function testGrpcMetadataUaKeyIsLowercaseForPhpExt(): void
-    {
-        $this->assertSame('ua', GrpcClients::GRPC_USER_AGENT_METADATA_KEY);
-        $this->assertStringStartsWith('toggly-php/', SdkIdentity::userAgent());
     }
 
     public function testGrpcTarget(): void

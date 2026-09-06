@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - gRPC metadata user-agent key is `ua` (PHP ext-grpc lowercases keys; same
   semantics as .NET/Go/Node `UA`).
 - SDK identity version bumped to `0.4.0`.
+- `GrpcPayloadConverter` lives in PSR-4 source (no `ext-grpc` load requirement);
+  BaseStub subclasses stay in `resources/grpc/`.
+
+### Fixed
+- Unique used/viewed/application hash limits now refuse new hashes consistently
+  once the cap is reached (existing hashes still accepted).
+- Owned gRPC client pairs are closed on provider/service destroy.
 
 ## [0.3.0] - 2026-09-04
 

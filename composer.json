@@ -1,6 +1,6 @@
 {
     "name": "toggly/feature-management-php",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "Toggly Feature Management library for PHP with Laravel and WordPress support",
     "type": "library",
     "keywords": [
@@ -28,7 +28,7 @@
         "docs": "https://docs.toggly.io/sdks/php"
     },
     "require": {
-        "php": "^7.4|^8.0|^8.1|^8.2|^8.3",
+        "php": "^7.4|^8.0|^8.1|^8.2|^8.3|^8.4",
         "psr/container": "^1.0|^2.0",
         "psr/http-client": "^1.0",
         "psr/http-factory": "^1.0",

@@ -11,7 +11,7 @@ Releases are handled by the **PHP SDK - Release** GitHub Actions workflow.
 3. Choose the bump type (`patch`, `minor`, or `major`) and whether it is a pre-release.
 4. The workflow will:
    - Compute the next version from the latest `v*` tag.
-   - Run tests across PHP 7.4–8.3.
+   - Run tests across PHP 8.2–8.4 (package still declares `^7.4`–`^8.4`).
    - Create a signed Git tag (`v{version}`).
    - Create a GitHub Release.
 5. Packagist picks up the new tag automatically via webhook.

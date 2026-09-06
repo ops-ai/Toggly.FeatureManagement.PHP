@@ -288,6 +288,45 @@ jobs:
           # still use it exclusively here (no github.token fallback).
           token: ${{ secrets.RELEASE_PUSH_TOKEN }}
 
+      # danharrin/monorepo-split checks out `main` on the mirror. Brand-new
+      # GitHub repos are empty and have no branches, so the split fails with
+      # `pathspec 'main' did not match`. Seed an initial main when needed.
+      - name: Ensure mirror has main branch
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          MIRROR_REPO: ops-ai/${{ matrix.package.repository_name }}
+          PACKAGE_NAME: ${{ matrix.package.local_path }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${MIRROR_REPO}/git/ref/heads/main" >/dev/null 2>&1; then
+            echo "Mirror ${MIRROR_REPO} already has main — skipping bootstrap."
+            exit 0
+          fi
+
+          echo "Mirror ${MIRROR_REPO} has no main branch — bootstrapping empty repo."
+          TMP=$(mktemp -d)
+          trap 'rm -rf "${TMP}"' EXIT
+          cd "${TMP}"
+          git init -b main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config commit.gpgsign false
+
+          {
+            echo "# toggly/${PACKAGE_NAME}"
+            echo
+            echo "Read-only Packagist mirror. Source of truth:"
+            echo "https://github.com/ops-ai/Toggly.FeatureManagement.PHP"
+            echo
+            echo "Do not open PRs here — changes are pushed by the monorepo release workflow."
+          } > README.md
+
+          git add README.md
+          git commit --no-gpg-sign -m "Initialize mirror repository"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${MIRROR_REPO}.git"
+          git push -u origin main
+          echo "Bootstrapped ${MIRROR_REPO}#main"
+
       - name: Split package directory to mirror
         uses: danharrin/monorepo-split-github-action@v2.4.0
         env:

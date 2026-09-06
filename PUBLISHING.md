@@ -30,6 +30,9 @@ Releases are handled by the **PHP SDK - Release** GitHub Actions workflow.
    - Run tests across PHP 8.2–8.4 (package still declares `^7.4`–`^8.4`).
    - Create a signed Git tag (`v{version}`) on this monorepo.
    - Create a GitHub Release.
+   - **Bootstrap** each mirror with an initial `main` commit if the repo is
+     still empty (new mirrors have no default branch; without this,
+     `danharrin/monorepo-split` fails with `pathspec 'main' did not match`).
    - Subtree-split `packages/laravel` → `ops-ai/Toggly.FeatureManagement.PHP.Laravel`
      (`main` + tag `v{version}`).
    - Subtree-split `packages/wordpress` → `ops-ai/Toggly.FeatureManagement.PHP.Wordpress`

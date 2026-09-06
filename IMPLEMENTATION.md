@@ -6,7 +6,7 @@ This document summarizes the PHP Toggly Feature Management library implementatio
 
 The library is organized into three main parts:
 
-1. **Core Library** (`packages/feature-management-php/`): Framework-agnostic core functionality
+1. **Core Library** (repo root `src/`): Framework-agnostic core functionality (`toggly/feature-management-php`)
 2. **Laravel Integration** (`packages/laravel/`): Laravel-specific service provider, facade, middleware, and filters
 3. **WordPress Plugin** (`packages/wordpress/`): WordPress plugin with admin interface
 

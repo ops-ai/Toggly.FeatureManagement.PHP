@@ -3,7 +3,14 @@
 ## Installation
 
 ```bash
+# Core only
 composer require toggly/feature-management-php
+
+# Laravel (pulls core)
+composer require toggly/laravel
+
+# WordPress (pulls core)
+composer require toggly/wordpress
 ```
 
 ## Laravel Quick Start

@@ -1,6 +1,6 @@
 {
     "name": "toggly/laravel",
-    "version": "0.4.1",
+    "version": "1.0.0",
     "description": "Toggly Feature Management Laravel integration",
     "type": "library",
     "keywords": [
@@ -21,12 +21,12 @@
     "homepage": "https://docs.toggly.io/sdks/php",
     "support": {
         "issues": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP/issues",
-        "source": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP",
+        "source": "https://github.com/ops-ai/Toggly.FeatureManagement.PHP.Laravel",
         "docs": "https://docs.toggly.io/sdks/php"
     },
     "require": {
         "php": "^7.4|^8.0|^8.1|^8.2|^8.3|^8.4",
-        "toggly/feature-management-php": "^0.4.1"
+        "toggly/feature-management-php": "^1.0"
     },
     "suggest": {
         "illuminate/support": "Laravel support package (^10.0|^11.0|^12.0)",

@@ -9,6 +9,18 @@
 
 Official PHP SDK for [Toggly](https://toggly.io) feature flags — Composer package with native Laravel and WordPress support.
 
+## Roadmap (1.0 Packagist split)
+
+Today this single package ships core, Laravel, and WordPress together. A
+breaking **1.0** release will keep `toggly/feature-management-php` as
+**core-only** and publish framework packages separately:
+
+- `composer require toggly/laravel` — Laravel integration (depends on core)
+- `composer require toggly/wordpress` — WordPress integration (depends on core)
+
+PHP namespaces (`Toggly\FeatureManagement`, `Toggly\Laravel`,
+`Toggly\WordPress`) stay the same; only Composer coordinates change.
+
 ## Features
 
 - **Full Feature Parity**: Matches the functionality of the .NET Toggly.FeatureManagement library
@@ -327,7 +339,7 @@ helpers and are not the evaluation path.
 
 ## Requirements
 
-- PHP 7.4 or higher (8.1+ recommended)
+- PHP 7.4 or higher (8.2–8.4 recommended; CI covers 8.2, 8.3, and 8.4)
 - PSR-18 HTTP client (e.g., Guzzle, Symfony HTTP Client)
 - PSR-16 cache (optional, for snapshot provider)
 - PSR-11 container (optional, for dependency injection)

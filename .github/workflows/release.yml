@@ -193,14 +193,14 @@ jobs:
 
             ### Features
 
-            - PHP 7.4–8.3 support
+            - PHP 7.4–8.4 support (CI matrix 8.2–8.4)
             - Laravel service provider integration
             - WordPress integration
             - PSR-compatible interfaces (HTTP client, cache, logging)
 
             ### Requirements
 
-            - PHP ^7.4 | ^8.0 | ^8.1 | ^8.2 | ^8.3
+            - PHP ^7.4 | ^8.0 | ^8.1 | ^8.2 | ^8.3 | ^8.4
 
             ### Links
 

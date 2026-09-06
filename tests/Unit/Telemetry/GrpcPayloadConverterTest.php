@@ -27,7 +27,7 @@ class GrpcPayloadConverterTest extends TestCase
             'time' => ['seconds' => 1700000000, 'nanos' => 0],
             'processStartTime' => ['seconds' => 1699990000, 'nanos' => 500],
             'instanceName' => 'i1',
-            'appVersion' => '0.4.0',
+            'appVersion' => '0.4.1',
             'totalUniqueUsers' => 1,
             'uniqueUserHashes' => [IdentityHasher::hashIdentity('user-1')],
             'stats' => [

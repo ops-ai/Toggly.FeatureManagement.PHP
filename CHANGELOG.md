@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-06
+
+### Changed
+- Declared PHP `^8.4` in `composer.json` to match the CI/release test matrix.
+- README documents the planned 1.0 Packagist split (`toggly/laravel`,
+  `toggly/wordpress`; this package becomes core-only).
+- Release workflow / PUBLISHING copy lists PHP through 8.4.
+- SDK identity version bumped to `0.4.1`.
+
+### Notes
+- First Packagist stable tag after `0.2.0`. Manifest work from `0.3.0` /
+  `0.4.0` on `main` ships to Packagist with this release (intermediate
+  versions were never tagged for the registry).
+
 ## [0.4.0] - 2026-09-06
 
 ### Added

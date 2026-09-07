@@ -328,7 +328,7 @@ jobs:
           echo "Bootstrapped ${MIRROR_REPO}#main"
 
       - name: Split package directory to mirror
-        uses: danharrin/monorepo-split-github-action@v2.4.0
+        uses: danharrin/monorepo-split-github-action@v2.4.5
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
         with:

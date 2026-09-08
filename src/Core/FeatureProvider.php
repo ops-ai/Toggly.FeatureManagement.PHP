@@ -830,10 +830,12 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
     private function normalizeEtag(string $etag): string
     {
         $trimmed = trim($etag);
-        if (str_starts_with($trimmed, 'W/')) {
+        // PHP 7.4-compatible (avoid str_starts_with / str_ends_with).
+        if (strpos($trimmed, 'W/') === 0) {
             $trimmed = trim(substr($trimmed, 2));
         }
-        if (strlen($trimmed) >= 2 && str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"')) {
+        $len = strlen($trimmed);
+        if ($len >= 2 && $trimmed[0] === '"' && $trimmed[$len - 1] === '"') {
             return substr($trimmed, 1, -1);
         }
 

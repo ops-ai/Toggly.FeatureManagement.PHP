@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-08
+
+### Added
+- Definition-refresh cache hit/miss telemetry on usage `SendStats`
+  (`definitionCacheHits` / `definitionCacheMisses` on `FeatureStat`).
+- `UsageStatsProviderInterface::recordDefinitionCacheHit` /
+  `recordDefinitionCacheMiss`; cache-only batches still flush.
+
+### Changed
+- SDK identity / package version bumped to `1.1.0` (`toggly-php/1.1.0`).
+
 ## [1.0.0] - 2026-09-06
 
 ### Breaking

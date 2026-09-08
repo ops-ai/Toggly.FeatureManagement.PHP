@@ -33,4 +33,14 @@ interface UsageStatsProviderInterface
      * @param string $featureKey Name/key of the feature
      */
     public function recordView(string $featureKey): void;
+
+    /**
+     * Record a definition-refresh outcome served from local/cache (not a new revision).
+     */
+    public function recordDefinitionCacheHit(): void;
+
+    /**
+     * Record a definition-refresh that applied a new revision from the network.
+     */
+    public function recordDefinitionCacheMiss(): void;
 }

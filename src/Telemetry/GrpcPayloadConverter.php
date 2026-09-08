@@ -74,6 +74,12 @@ final class GrpcPayloadConverter
         if (isset($payload['processStartTime']) && is_array($payload['processStartTime'])) {
             $data['processStartTime'] = self::timestampFromArray($payload['processStartTime']);
         }
+        if (isset($payload['definitionCacheHits'])) {
+            $data['definitionCacheHits'] = (int) $payload['definitionCacheHits'];
+        }
+        if (isset($payload['definitionCacheMisses'])) {
+            $data['definitionCacheMisses'] = (int) $payload['definitionCacheMisses'];
+        }
 
         return new FeatureStat($data);
     }

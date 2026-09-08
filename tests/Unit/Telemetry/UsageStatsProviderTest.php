@@ -194,4 +194,100 @@ class UsageStatsProviderTest extends TestCase
         $this->assertSame(1, $afterRerecord['stats'][0]['uniqueContextIdentifierEnabledCount']);
         $this->assertSame(2, $afterRerecord['stats'][0]['variantStats']['enabled']['checkCount']);
     }
+
+    public function testCacheOnlyBatchStillSends(): void
+    {
+        $captured = null;
+        $grpc = new class($captured) implements UsageGrpcClient {
+            /** @var array<string, mixed>|null */
+            public $captured;
+
+            public function __construct(&$captured)
+            {
+                $this->captured = &$captured;
+            }
+
+            public function sendStats(array $payload, array $metadata = []): void
+            {
+                $this->captured = $payload;
+            }
+
+            public function close(): void
+            {
+            }
+        };
+
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production', 'instance_name' => 'i1']),
+            $http,
+            null,
+            new NullLogger(),
+            $grpc
+        );
+
+        $provider->recordDefinitionCacheHit();
+        $provider->recordDefinitionCacheHit();
+        $provider->recordDefinitionCacheMiss();
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $this->assertSame([], $peek['stats']);
+        $this->assertSame(2, $peek['definitionCacheHits']);
+        $this->assertSame(1, $peek['definitionCacheMisses']);
+
+        $provider->sendStats();
+        $this->assertIsArray($captured);
+        $this->assertSame(2, $captured['definitionCacheHits']);
+        $this->assertSame(1, $captured['definitionCacheMisses']);
+        $this->assertNull($provider->peekPayload());
+    }
+
+    public function testFailedSendRestoresCacheCounters(): void
+    {
+        $attempts = 0;
+        $http = $this->createMock(TogglyHttpClient::class);
+        $grpc = new class($attempts) implements UsageGrpcClient {
+            public int $attempts;
+
+            public function __construct(int &$attempts)
+            {
+                $this->attempts = &$attempts;
+            }
+
+            public function sendStats(array $payload, array $metadata = []): void
+            {
+                $this->attempts++;
+                if ($this->attempts === 1) {
+                    throw new \RuntimeException('send failed');
+                }
+            }
+
+            public function close(): void
+            {
+            }
+        };
+
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            $grpc
+        );
+
+        $provider->recordDefinitionCacheHit();
+        $provider->recordDefinitionCacheMiss();
+        $provider->sendStats();
+
+        $afterFailure = $provider->peekPayload();
+        $this->assertNotNull($afterFailure);
+        $this->assertSame(1, $afterFailure['definitionCacheHits']);
+        $this->assertSame(1, $afterFailure['definitionCacheMisses']);
+
+        $provider->recordDefinitionCacheHit();
+        $provider->sendStats();
+        $this->assertNull($provider->peekPayload());
+        $this->assertSame(2, $attempts);
+    }
 }

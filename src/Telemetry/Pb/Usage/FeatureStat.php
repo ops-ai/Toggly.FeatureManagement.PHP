@@ -54,6 +54,18 @@ class FeatureStat extends \Google\Protobuf\Internal\Message
      * Generated from protobuf field <code>repeated int32 uniqueUserHashes = 9;</code>
      */
     private $uniqueUserHashes;
+    /**
+     * SDK-reported definition-refresh cache hits (batch delta)
+     *
+     * Generated from protobuf field <code>optional int32 definitionCacheHits = 10;</code>
+     */
+    protected $definitionCacheHits = null;
+    /**
+     * SDK-reported definition-refresh cache misses (batch delta)
+     *
+     * Generated from protobuf field <code>optional int32 definitionCacheMisses = 11;</code>
+     */
+    protected $definitionCacheMisses = null;
 
     /**
      * Constructor.
@@ -71,6 +83,10 @@ class FeatureStat extends \Google\Protobuf\Internal\Message
      *     @type string $appVersion
      *     @type int[] $uniqueUserHashes
      *           Application-level unique user ID hashes (all users, regardless of feature usage)
+     *     @type int $definitionCacheHits
+     *           SDK-reported definition-refresh cache hits (batch delta)
+     *     @type int $definitionCacheMisses
+     *           SDK-reported definition-refresh cache misses (batch delta)
      * }
      */
     public function __construct($data = NULL) {
@@ -316,6 +332,78 @@ class FeatureStat extends \Google\Protobuf\Internal\Message
     {
         $arr = GPBUtil::checkRepeatedField($var, \Google\Protobuf\Internal\GPBType::INT32);
         $this->uniqueUserHashes = $arr;
+
+        return $this;
+    }
+
+    /**
+     * SDK-reported definition-refresh cache hits (batch delta)
+     *
+     * Generated from protobuf field <code>optional int32 definitionCacheHits = 10;</code>
+     * @return int
+     */
+    public function getDefinitionCacheHits()
+    {
+        return isset($this->definitionCacheHits) ? $this->definitionCacheHits : 0;
+    }
+
+    public function hasDefinitionCacheHits()
+    {
+        return isset($this->definitionCacheHits);
+    }
+
+    public function clearDefinitionCacheHits()
+    {
+        unset($this->definitionCacheHits);
+    }
+
+    /**
+     * SDK-reported definition-refresh cache hits (batch delta)
+     *
+     * Generated from protobuf field <code>optional int32 definitionCacheHits = 10;</code>
+     * @param int $var
+     * @return $this
+     */
+    public function setDefinitionCacheHits($var)
+    {
+        GPBUtil::checkInt32($var);
+        $this->definitionCacheHits = $var;
+
+        return $this;
+    }
+
+    /**
+     * SDK-reported definition-refresh cache misses (batch delta)
+     *
+     * Generated from protobuf field <code>optional int32 definitionCacheMisses = 11;</code>
+     * @return int
+     */
+    public function getDefinitionCacheMisses()
+    {
+        return isset($this->definitionCacheMisses) ? $this->definitionCacheMisses : 0;
+    }
+
+    public function hasDefinitionCacheMisses()
+    {
+        return isset($this->definitionCacheMisses);
+    }
+
+    public function clearDefinitionCacheMisses()
+    {
+        unset($this->definitionCacheMisses);
+    }
+
+    /**
+     * SDK-reported definition-refresh cache misses (batch delta)
+     *
+     * Generated from protobuf field <code>optional int32 definitionCacheMisses = 11;</code>
+     * @param int $var
+     * @return $this
+     */
+    public function setDefinitionCacheMisses($var)
+    {
+        GPBUtil::checkInt32($var);
+        $this->definitionCacheMisses = $var;
 
         return $this;
     }

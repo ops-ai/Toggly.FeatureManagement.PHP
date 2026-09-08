@@ -56,6 +56,9 @@ class UsageStatsProvider implements UsageStatsProviderInterface
     /** @var array<int, true> */
     private array $applicationUniqueUserHashes = [];
 
+    private int $definitionCacheHits = 0;
+    private int $definitionCacheMisses = 0;
+
     private bool $sendInProgress = false;
     private bool $shutdownRegistered = false;
     private ?int $lastSend = null;
@@ -184,6 +187,22 @@ class UsageStatsProvider implements UsageStatsProviderInterface
                 $this->recordApplicationUniqueUserId($identifier);
             }
         }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function recordDefinitionCacheHit(): void
+    {
+        $this->definitionCacheHits++;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function recordDefinitionCacheMiss(): void
+    {
+        $this->definitionCacheMisses++;
     }
 
     /**
@@ -357,6 +376,8 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             && empty($this->uniqueUserHashes)
             && empty($this->uniqueViewedUserHashes)
             && empty($this->applicationUniqueUserHashes)
+            && $this->definitionCacheHits === 0
+            && $this->definitionCacheMisses === 0
         ) {
             return null;
         }
@@ -407,6 +428,12 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         if ($this->settings->appVersion !== null && $this->settings->appVersion !== '') {
             $payload['appVersion'] = $this->settings->appVersion;
         }
+        if ($this->definitionCacheHits > 0) {
+            $payload['definitionCacheHits'] = $this->definitionCacheHits;
+        }
+        if ($this->definitionCacheMisses > 0) {
+            $payload['definitionCacheMisses'] = $this->definitionCacheMisses;
+        }
 
         if ($reset) {
             $this->variantStats = [];
@@ -416,6 +443,8 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             $this->uniqueUserHashes = [];
             $this->uniqueViewedUserHashes = [];
             $this->applicationUniqueUserHashes = [];
+            $this->definitionCacheHits = 0;
+            $this->definitionCacheMisses = 0;
         }
 
         return $payload;
@@ -476,6 +505,12 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         }
         foreach ($payload['uniqueUserHashes'] ?? [] as $hash) {
             $this->applicationUniqueUserHashes[(int) $hash] = true;
+        }
+        if (isset($payload['definitionCacheHits'])) {
+            $this->definitionCacheHits += (int) $payload['definitionCacheHits'];
+        }
+        if (isset($payload['definitionCacheMisses'])) {
+            $this->definitionCacheMisses += (int) $payload['definitionCacheMisses'];
         }
     }
 

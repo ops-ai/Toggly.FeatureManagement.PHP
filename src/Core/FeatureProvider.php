@@ -8,6 +8,7 @@ use Toggly\FeatureManagement\Contracts\FeatureSnapshotProviderInterface;
 use Toggly\FeatureManagement\Contracts\FeatureStateServiceInterface;
 use Toggly\FeatureManagement\Contracts\IFeatureExperimentProvider;
 use Toggly\FeatureManagement\Contracts\SecureFeatureProviderInterface;
+use Toggly\FeatureManagement\Contracts\UsageStatsProviderInterface;
 use Toggly\FeatureManagement\Exceptions\SignatureVerificationException;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
 use Toggly\FeatureManagement\SdkIdentity;
@@ -28,6 +29,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
     private TogglyHttpClient $httpClient;
     private ?FeatureSnapshotProviderInterface $snapshotProvider;
     private FeatureStateServiceInterface $featureStateService;
+    private ?UsageStatsProviderInterface $usageStatsProvider;
     private ?EcdsaSignatureVerifier $signatureVerifier;
     private ?JwkManager $jwkManager;
     private LoggerInterface $logger;
@@ -71,6 +73,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
     private ?int $lastErrorTime = null;
     private ?int $lastRefresh = null;
     private bool $refreshInProgress = false;
+    private bool $pendingWebSocketRefresh = false;
     private ?int $lastFallbackPoll = null;
     private int $fallbackInterval;
 
@@ -82,12 +85,14 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         TogglyHttpClient $httpClient,
         FeatureStateServiceInterface $featureStateService,
         ?FeatureSnapshotProviderInterface $snapshotProvider = null,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?UsageStatsProviderInterface $usageStatsProvider = null
     ) {
         $this->settings = $settings;
         $this->httpClient = $httpClient;
         $this->snapshotProvider = $snapshotProvider;
         $this->featureStateService = $featureStateService;
+        $this->usageStatsProvider = $usageStatsProvider;
         $this->logger = $logger ?? new NullLogger();
         $this->webSocketClient = new WebSocketClient($this->logger);
         $this->fallbackInterval = self::WS_FALLBACK_INTERVAL;
@@ -112,6 +117,14 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
         // Start refresh timer (using a simple approach - in production, use a proper scheduler)
         $this->startRefreshTimer();
+    }
+
+    /**
+     * Wire usage telemetry after construction (e.g. host DI ordering).
+     */
+    public function setUsageStatsProvider(?UsageStatsProviderInterface $usageStatsProvider): void
+    {
+        $this->usageStatsProvider = $usageStatsProvider;
     }
 
     /**
@@ -141,6 +154,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             }
 
             $features = $snapshot['features'];
+            $startupFromDurable = empty($this->definitions);
 
             // Verify signature if using signed definitions
             if ($this->settings->useSignedDefinitions) {
@@ -208,6 +222,11 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 $this->featureStateService->notifyDefinitionsChanged();
             }
             $this->loaded = true;
+
+            // Startup served from durable snapshot before first network — count once.
+            if ($startupFromDurable) {
+                $this->recordDefinitionCacheHit();
+            }
         } catch (\Exception $e) {
             $this->reportError('Error loading from snapshot', $e);
         }
@@ -241,24 +260,43 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
     }
 
     /**
-     * Refresh features from API
+     * Refresh features from API.
+     *
+     * @param bool $force When true (WebSocket notify), bypass scheduled-poll skip while
+     *     live WS is within the fallback window. Concurrent in-flight skips are not counted;
+     *     forced notifies queue a follow-up refresh.
      */
     public function refreshFeatures(bool $force = false): void
     {
+        // Concurrent refresh skipped (in flight) — do not count.
         if ($this->refreshInProgress) {
-            $this->logger->debug('Refresh already in progress, skipping');
+            if ($force) {
+                $this->pendingWebSocketRefresh = true;
+                $this->logger->debug('Refresh already in progress; queued WebSocket-forced refresh');
+            } else {
+                $this->logger->debug('Refresh already in progress, skipping');
+            }
             return;
         }
 
+        // Scheduled skip (live WS + fallback window) must not suppress WS-forced refresh.
         if (!$force && $this->webSocketClient->isRunning()) {
             $now = time();
             if ($this->lastFallbackPoll !== null && ($now - $this->lastFallbackPoll) < $this->fallbackInterval) {
+                $this->logger->debug('Skipping scheduled refresh — WebSocket is connected');
+                $this->recordDefinitionCacheHit();
                 return;
             }
             $this->lastFallbackPoll = $now;
         }
 
+        if ($force) {
+            $this->lastFallbackPoll = time();
+        }
+
         $this->refreshInProgress = true;
+        // Exactly one hit/miss per attempt: record after apply, skip catch if already counted.
+        $outcomeRecorded = false;
 
         try {
             // Ensure initial load happens
@@ -291,11 +329,26 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 $path = "definitions/{$this->settings->appKey}/{$this->settings->environment}";
             }
 
+            $previousEtag = $this->httpClient->getLastETag();
             $response = $this->httpClient->get($path);
 
             // Handle 304 Not Modified
             if ($response === null) {
                 $this->logger->debug('Features not modified (304)');
+                $this->recordDefinitionCacheHit();
+                $outcomeRecorded = true;
+                $this->tryConnectWebSocket();
+                return;
+            }
+
+            $newEtag = $this->httpClient->getLastETag();
+            // HTTP 200 whose revision/etag matches existing (CDN replay) — cache hit.
+            if ($this->etagsMatch($previousEtag, $newEtag)) {
+                $this->logger->debug('Features etag unchanged on HTTP 200 (CDN replay)');
+                $this->recordDefinitionCacheHit();
+                $outcomeRecorded = true;
+                $this->lastRefresh = time();
+                $this->tryConnectWebSocket();
                 return;
             }
 
@@ -305,11 +358,19 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
             if ($data === null) {
                 $this->logger->warning('Received empty or invalid response from Toggly');
+                $this->recordDefinitionCacheHit();
+                $outcomeRecorded = true;
                 return;
             }
 
             if ($this->settings->enableVariants) {
-                $this->processEvaluatedVariantsResponse($body, $data);
+                $applied = $this->processEvaluatedVariantsResponse($body, $data);
+                if ($applied) {
+                    $this->recordDefinitionCacheMiss();
+                } else {
+                    $this->recordDefinitionCacheHit();
+                }
+                $outcomeRecorded = true;
                 return;
             }
 
@@ -324,6 +385,8 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                         'current' => $this->lastDefinitionsTimestamp,
                         'received' => $signedResponse->timestamp,
                     ]);
+                    $this->recordDefinitionCacheHit();
+                    $outcomeRecorded = true;
                     return;
                 }
 
@@ -341,10 +404,14 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
                     if (!$valid) {
                         $this->reportError('Invalid signature');
+                        $this->recordDefinitionCacheHit();
+                        $outcomeRecorded = true;
                         return;
                     }
                 } catch (SignatureVerificationException $e) {
                     $this->reportError('Signature verification failed', $e);
+                    $this->recordDefinitionCacheHit();
+                    $outcomeRecorded = true;
                     return;
                 }
 
@@ -402,13 +469,24 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             $this->loaded = true;
             $this->lastRefresh = time();
 
+            $this->recordDefinitionCacheMiss();
+            $outcomeRecorded = true;
+
             // Try to establish WebSocket connection
             $this->tryConnectWebSocket();
         } catch (\Exception $e) {
             // Keep last-known-good in-memory definitions (LKG); report error.
             $this->reportError('Error refreshing features list', $e);
+            if (!$outcomeRecorded) {
+                $this->recordDefinitionCacheHit();
+            }
         } finally {
             $this->refreshInProgress = false;
+            if ($this->pendingWebSocketRefresh) {
+                $this->pendingWebSocketRefresh = false;
+                // Drain WS notifies that arrived while we were in flight (no count on the skip).
+                $this->refreshFeatures(true);
+            }
         }
     }
 
@@ -503,13 +581,15 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
     /**
      * Parse and apply evaluated-variants-signed response (defs object keyed by feature).
+     *
+     * @return bool True when a new revision was applied (cache miss); false when LKG kept (hit).
      */
-    private function processEvaluatedVariantsResponse(string $body, array $data): void
+    private function processEvaluatedVariantsResponse(string $body, array $data): bool
     {
         $defsRaw = $data['defs'] ?? null;
         if (!is_array($defsRaw)) {
             $this->logger->warning('evaluated-variants-signed response missing defs object');
-            return;
+            return false;
         }
 
         $timestamp = (int)($data['timestamp'] ?? 0);
@@ -523,7 +603,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                         'current' => $this->lastDefinitionsTimestamp,
                         'received' => $timestamp,
                     ]);
-                    return;
+                    return false;
                 }
 
                 try {
@@ -537,11 +617,11 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
                     if (!$valid) {
                         $this->logger->error('Invalid signature on evaluated-variants response');
-                        return;
+                        return false;
                     }
                 } catch (SignatureVerificationException $e) {
                     $this->logger->error('Signature verification failed for evaluated-variants', ['error' => $e->getMessage()]);
-                    return;
+                    return false;
                 }
             } else {
                 $this->logger->notice('evaluated-variants-signed response has no signature; skipping verification');
@@ -611,6 +691,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         $this->lastRefresh = time();
 
         $this->tryConnectWebSocket();
+        return true;
     }
 
     /**
@@ -735,6 +816,52 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         }
 
         return '[]';
+    }
+
+    private function etagsMatch(?string $left, ?string $right): bool
+    {
+        if ($left === null || $right === null || $left === '' || $right === '') {
+            return false;
+        }
+
+        return $this->normalizeEtag($left) === $this->normalizeEtag($right);
+    }
+
+    private function normalizeEtag(string $etag): string
+    {
+        $trimmed = trim($etag);
+        if (str_starts_with($trimmed, 'W/')) {
+            $trimmed = trim(substr($trimmed, 2));
+        }
+        if (strlen($trimmed) >= 2 && str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"')) {
+            return substr($trimmed, 1, -1);
+        }
+
+        return $trimmed;
+    }
+
+    private function recordDefinitionCacheHit(): void
+    {
+        if ($this->usageStatsProvider === null) {
+            return;
+        }
+        try {
+            $this->usageStatsProvider->recordDefinitionCacheHit();
+        } catch (\Throwable $e) {
+            $this->logger->debug('Failed to record definition cache hit', ['error' => $e->getMessage()]);
+        }
+    }
+
+    private function recordDefinitionCacheMiss(): void
+    {
+        if ($this->usageStatsProvider === null) {
+            return;
+        }
+        try {
+            $this->usageStatsProvider->recordDefinitionCacheMiss();
+        } catch (\Throwable $e) {
+            $this->logger->debug('Failed to record definition cache miss', ['error' => $e->getMessage()]);
+        }
     }
 
     private function isAlwaysOn(FeatureDefinition $feature): bool

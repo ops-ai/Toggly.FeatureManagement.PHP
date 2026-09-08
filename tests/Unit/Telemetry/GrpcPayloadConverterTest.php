@@ -30,6 +30,8 @@ class GrpcPayloadConverterTest extends TestCase
             'appVersion' => '1.0.0',
             'totalUniqueUsers' => 1,
             'uniqueUserHashes' => [IdentityHasher::hashIdentity('user-1')],
+            'definitionCacheHits' => 3,
+            'definitionCacheMisses' => 2,
             'stats' => [
                 [
                     'feature' => 'FeatureA',
@@ -63,6 +65,10 @@ class GrpcPayloadConverterTest extends TestCase
         $this->assertNotNull($msg->getProcessStartTime());
         $this->assertSame(1699990000, $msg->getProcessStartTime()->getSeconds());
         $this->assertSame(500, $msg->getProcessStartTime()->getNanos());
+        $this->assertTrue($msg->hasDefinitionCacheHits());
+        $this->assertSame(3, $msg->getDefinitionCacheHits());
+        $this->assertTrue($msg->hasDefinitionCacheMisses());
+        $this->assertSame(2, $msg->getDefinitionCacheMisses());
 
         $stat = $msg->getStats()[0];
         $this->assertSame('FeatureA', $stat->getFeature());

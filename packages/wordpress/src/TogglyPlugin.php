@@ -114,19 +114,21 @@ class TogglyPlugin
         // Create feature state service
         $featureStateService = new FeatureStateService();
 
+        // Create context provider
+        $contextProvider = new WordPressFeatureContextProvider();
+
+        // Create usage stats provider (before FeatureProvider so startup snapshot hits are recorded)
+        $this->usageStatsProvider = new UsageStatsProvider($settings, $httpClient, $contextProvider);
+
         // Create feature provider
         $this->featureProvider = new FeatureProvider(
             $settings,
             $httpClient,
             $featureStateService,
-            $snapshotProvider
+            $snapshotProvider,
+            null,
+            $this->usageStatsProvider
         );
-
-        // Create context provider
-        $contextProvider = new WordPressFeatureContextProvider();
-
-        // Create usage stats provider
-        $this->usageStatsProvider = new UsageStatsProvider($settings, $httpClient, $contextProvider);
 
         // Create metrics registry and service
         $metricsRegistry = new MetricsRegistryService();

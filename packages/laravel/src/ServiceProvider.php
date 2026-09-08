@@ -72,8 +72,16 @@ class ServiceProvider extends BaseServiceProvider
                 ? $app->make(FeatureSnapshotProviderInterface::class)
                 : null;
             $logger = $app->make(\Psr\Log\LoggerInterface::class);
+            $usageStats = $app->make(UsageStatsProvider::class);
 
-            return new FeatureProvider($settings, $httpClient, $stateService, $snapshotProvider, $logger);
+            return new FeatureProvider(
+                $settings,
+                $httpClient,
+                $stateService,
+                $snapshotProvider,
+                $logger,
+                $usageStats
+            );
         });
 
         // Register feature manager

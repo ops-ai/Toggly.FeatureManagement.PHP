@@ -3,7 +3,7 @@
  * Plugin Name: Toggly Feature Management
  * Plugin URI: https://toggly.io/
  * Description: Feature flags around anything. A/B test entire features or sections of your website or store.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: opsAI LLC
  * Author URI: https://ops.ai/
  * License: MIT

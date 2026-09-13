@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-13
+
+### Changed
+- Declared PHP 8.5 compatibility for the core, Laravel, and WordPress
+  packages without changing their retained PHP floors.
+- Added Laravel 13 to the Laravel package's documented Illuminate host range;
+  retained Laravel 10–12 guidance and package behavior.
+- Added packed-artifact host validation for Laravel 10–13 and a native
+  WordPress 7.1 plugin activation host on PHP 8.5.
+
 ## [1.1.0] - 2026-09-08
 
 ### Added

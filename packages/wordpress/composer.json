@@ -1,6 +1,6 @@
 {
     "name": "toggly/wordpress",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Toggly Feature Management WordPress plugin integration",
     "type": "library",
     "keywords": [
@@ -25,7 +25,7 @@
         "docs": "https://docs.toggly.io/sdks/php"
     },
     "require": {
-        "php": "^7.4|^8.0|^8.1|^8.2|^8.3|^8.4",
+        "php": "^7.4|^8.0|^8.1|^8.2|^8.3|^8.4|^8.5",
         "toggly/feature-management-php": "^1.0"
     },
     "autoload": {

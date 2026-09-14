@@ -19,7 +19,7 @@ class MonorepoSplitContractTest extends TestCase
         $json = $this->readJson('composer.json');
 
         $this->assertSame('toggly/feature-management-php', $json['name']);
-        $this->assertSame('1.1.0', $json['version']);
+        $this->assertSame('1.1.2', $json['version']);
         $this->assertSame(['Toggly\\FeatureManagement\\' => 'src/'], $json['autoload']['psr-4']);
         $this->assertArrayNotHasKey('Toggly\\Laravel\\', $json['autoload']['psr-4'] ?? []);
         $this->assertArrayNotHasKey('Toggly\\WordPress\\', $json['autoload']['psr-4'] ?? []);
@@ -30,7 +30,7 @@ class MonorepoSplitContractTest extends TestCase
         $json = $this->readJson('packages/laravel/composer.json');
 
         $this->assertSame('toggly/laravel', $json['name']);
-        $this->assertSame('1.0.0', $json['version']);
+        $this->assertSame('1.0.1', $json['version']);
         $this->assertSame('^1.0', $json['require']['toggly/feature-management-php']);
         $this->assertArrayNotHasKey('repositories', $json);
         $this->assertSame(['Toggly\\Laravel\\' => 'src/'], $json['autoload']['psr-4']);
@@ -41,7 +41,7 @@ class MonorepoSplitContractTest extends TestCase
         $json = $this->readJson('packages/wordpress/composer.json');
 
         $this->assertSame('toggly/wordpress', $json['name']);
-        $this->assertSame('1.0.0', $json['version']);
+        $this->assertSame('1.0.2', $json['version']);
         $this->assertSame('^1.0', $json['require']['toggly/feature-management-php']);
         $this->assertArrayNotHasKey('repositories', $json);
         $this->assertSame(['Toggly\\WordPress\\' => 'src/'], $json['autoload']['psr-4']);

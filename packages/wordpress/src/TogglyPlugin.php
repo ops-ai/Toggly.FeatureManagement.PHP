@@ -104,8 +104,12 @@ class TogglyPlugin
         $snapshotProvider = null;
         $snapshotType = get_option('toggly_snapshot_provider', 'transient');
         if ($snapshotType === 'transient') {
+            $cacheAdapter = (new \ReflectionMethod(\Psr\SimpleCache\CacheInterface::class, 'get'))->hasReturnType()
+                ? new \Toggly\WordPress\Storage\WordPressCacheAdapterV3()
+                : new \Toggly\WordPress\Storage\WordPressCacheAdapter();
+
             $snapshotProvider = new CacheSnapshotProvider(
-                new \Toggly\WordPress\Storage\WordPressCacheAdapter(),
+                $cacheAdapter,
                 new SnapshotSettings(['document_name' => 'toggly_features']),
                 86400
             );
@@ -168,13 +172,7 @@ class TogglyPlugin
      */
     private function registerTemplateFunctions(): void
     {
-        if (!function_exists('toggly_is_enabled')) {
-            function toggly_is_enabled(string $featureKey, ?array $context = null): bool
-            {
-                $plugin = TogglyPlugin::getInstance();
-                return $plugin->isEnabled($featureKey, $context);
-            }
-        }
+        require_once __DIR__ . '/template-functions.php';
     }
 
     /**
@@ -220,6 +218,19 @@ class TogglyPlugin
      */
     private function scheduleCronJobs(): void
     {
+        // Register custom intervals before scheduling events that use them.
+        add_filter('cron_schedules', function ($schedules) {
+            $schedules['toggly_refresh_interval'] = [
+                'interval' => 300, // 5 minutes
+                'display' => 'Every 5 Minutes',
+            ];
+            $schedules['toggly_send_interval'] = [
+                'interval' => 60, // 1 minute
+                'display' => 'Every Minute',
+            ];
+            return $schedules;
+        });
+
         // Schedule feature refresh
         if (!wp_next_scheduled('toggly_refresh_features')) {
             wp_schedule_event(time(), 'toggly_refresh_interval', 'toggly_refresh_features');
@@ -247,17 +258,5 @@ class TogglyPlugin
             }
         });
 
-        // Add custom cron intervals
-        add_filter('cron_schedules', function ($schedules) {
-            $schedules['toggly_refresh_interval'] = [
-                'interval' => 300, // 5 minutes
-                'display' => 'Every 5 Minutes',
-            ];
-            $schedules['toggly_send_interval'] = [
-                'interval' => 60, // 1 minute
-                'display' => 'Every Minute',
-            ];
-            return $schedules;
-        });
     }
 }

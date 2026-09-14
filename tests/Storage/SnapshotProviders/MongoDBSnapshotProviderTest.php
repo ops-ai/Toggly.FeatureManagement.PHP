@@ -180,7 +180,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_jwk_snapshot_updates_existing_record(): void
+    public function save_jwk_snapshot_updates_existing_record_with_optional_key_fields_absent(): void
     {
         $jwks1 = $this->createTestJwks();
         $this->provider->saveJwkSnapshot($jwks1, 1700000001);
@@ -197,9 +197,32 @@ class MongoDBSnapshotProviderTest extends TestCase
         $this->assertEquals('updated-key-id', $result['jwks']->keys[0]->kid);
         $this->assertEquals(1700000002, $result['timestamp']);
 
+        $storedSnapshot = $this->collection->findOne(['_id' => 'toggly_jwks']);
+        $storedKey = json_decode($storedSnapshot['data'], true, 512, JSON_THROW_ON_ERROR)['keys'][0];
+        $this->assertArrayHasKey('crv', $storedKey);
+        $this->assertNull($storedKey['crv']);
+        $this->assertArrayHasKey('x', $storedKey);
+        $this->assertNull($storedKey['x']);
+        $this->assertArrayHasKey('y', $storedKey);
+        $this->assertNull($storedKey['y']);
+        $this->assertArrayHasKey('alg', $storedKey);
+        $this->assertNull($storedKey['alg']);
+
         // Verify only one document exists
         $count = $this->collection->countDocuments(['_id' => 'toggly_jwks']);
         $this->assertEquals(1, $count);
+    }
+
+    #[Test]
+    public function save_jwk_snapshot_rejects_a_key_without_required_fields(): void
+    {
+        $this->expectException(\Error::class);
+        $this->expectExceptionMessage('JsonWebKey::$kty');
+
+        $this->provider->saveJwkSnapshot(
+            new JsonWebKeySet(['keys' => [new JsonWebKey([])]]),
+            1700000002
+        );
     }
 
     #[Test]

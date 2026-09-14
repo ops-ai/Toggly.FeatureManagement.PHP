@@ -358,20 +358,25 @@ helpers and are not the evaluation path.
 
 ## Requirements
 
-- PHP 7.4 or higher (8.2–8.4 recommended; CI covers 8.2, 8.3, and 8.4)
+- PHP 7.4 or higher. CI covers PHP 8.2, 8.3, 8.4, and 8.5; PHP 8.5 is the
+  current tested runtime.
 - PSR-18 HTTP client (e.g., Guzzle, Symfony HTTP Client)
 - PSR-16 cache (optional, for snapshot provider)
 - PSR-11 container (optional, for dependency injection)
 
 ## Laravel Requirements
 
-- Laravel 8.0 or higher
+- Laravel 8.0 or higher remains the declared integration floor. Current
+  packed-package host coverage uses Laravel 10.3.3, 11.6.1, 12.12.2, and
+  13.10.1 with the PHP versions each host supports. Retained Laravel 8/9
+  applications continue to use the existing package setup.
 - `illuminate/support`
 - `illuminate/http`
 
 ## WordPress Requirements
 
-- WordPress 5.0 or higher
+- WordPress 5.0 or higher. The maintained plugin host is validated on
+  WordPress 7.1 with PHP 8.5.
 - No external dependencies (uses WordPress APIs)
 
 ## Architecture

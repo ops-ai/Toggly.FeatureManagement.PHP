@@ -118,7 +118,7 @@ The library is organized into three main parts:
 ## Dependencies
 
 ### Required
-- PHP 7.4+ (8.1+ recommended)
+- PHP 7.4+; current CI covers PHP 8.2–8.5
 - PSR interfaces (container, http-client, http-factory, simple-cache, log)
 
 ### Optional
@@ -128,10 +128,13 @@ The library is organized into three main parts:
 - OpenSSL extension (for signature verification)
 
 ### Laravel
-- Laravel 8.0+ (illuminate/support, illuminate/http)
+- Laravel 8.0+ remains the declared integration floor; packed host checks cover
+  Laravel 10.3.3, 11.6.1, 12.12.2, and 13.10.1. Retained Laravel 8/9 hosts
+  continue to use their existing package setup.
 
 ### WordPress
-- WordPress 5.0+
+- WordPress 5.0+; the maintained package host check activates the plugin on
+  WordPress 7.1 with PHP 8.5.
 - No external dependencies (uses WordPress APIs)
 
 ## Testing Status

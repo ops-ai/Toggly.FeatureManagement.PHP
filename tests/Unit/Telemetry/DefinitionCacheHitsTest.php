@@ -302,7 +302,12 @@ class DefinitionCacheHitsTest extends TestCase
     private function setPrivate(object $object, string $property, $value): void
     {
         $ref = new ReflectionProperty($object, $property);
-        $ref->setAccessible(true);
+        // ReflectionProperty private access is implicit from PHP 8.1. Calling
+        // setAccessible there is a no-op deprecated by PHP 8.5, while PHP 7.4
+        // still needs the call for this retained test runtime.
+        if (PHP_VERSION_ID < 80100) {
+            $ref->setAccessible(true);
+        }
         $ref->setValue($object, $value);
     }
 

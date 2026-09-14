@@ -27,7 +27,9 @@ Releases are handled by the **PHP SDK - Release** GitHub Actions workflow.
 3. Prefer `release_mode=publish` (uses the version already in root `composer.json`).
 4. The workflow will:
    - Resolve the version from root `composer.json` vs Packagist.
-   - Run tests across PHP 8.2–8.4 (package still declares `^7.4`–`^8.4`).
+   - Run core tests across PHP 8.2–8.5 (the packages retain their `^7.4`
+     floor and declare support through `^8.5`), plus packed Laravel and
+     WordPress host checks in the CI workflow.
    - Create a signed Git tag (`v{version}`) on this monorepo.
    - Create a GitHub Release.
    - **Bootstrap** each mirror with an initial `main` commit if the repo is

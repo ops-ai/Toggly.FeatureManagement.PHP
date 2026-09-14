@@ -5,7 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.2] - 2026-09-13
+
+### Fixed
+- WordPress now selects a PSR-16 v3-compatible transient-cache adapter on
+  current PHP hosts, while retaining the existing PSR-16 v1/v2 adapter for
+  PHP 7.4-compatible installations.
+- Restored the documented global `toggly_is_enabled()` template helper when
+  WordPress loads the plugin.
+- Register WordPress custom cron intervals before creating refresh and
+  telemetry events, so they are scheduled on a fresh installation.
+- MongoDB JWK snapshots preserve their existing key shape when optional JWK
+  fields are absent, without accepting keys that omit required fields.
+
+## [1.1.1] - 2026-09-13
+
+### Changed
+- Declared PHP 8.5 compatibility for the core, Laravel, and WordPress
+  packages without changing their retained PHP floors.
+- Added Laravel 13 to the Laravel package's documented Illuminate host range;
+  retained Laravel 10–12 guidance and package behavior.
+- Added packed-artifact host validation for Laravel 10–13 and a native
+  WordPress 7.1 plugin activation host on PHP 8.5.
 
 ## [1.1.0] - 2026-09-08
 

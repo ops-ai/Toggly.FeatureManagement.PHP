@@ -11,6 +11,16 @@ composer require toggly/laravel
 Package auto-discovery registers the service provider and `Toggly` facade.
 Manual `config/app.php` registration is only needed if auto-discovery is disabled.
 
+## Supported hosts
+
+The package retains its Laravel 8.0+ integration floor and PHP 7.4 package
+floor. Laravel 8/9 applications continue to use the existing setup.
+Current packed-package host coverage uses Laravel 10.3.3, 11.6.1, 12.12.2,
+and 13.10.1. Laravel 12 supports PHP 8.2–8.5; Laravel 13 requires PHP 8.3
+or later. Provide PSR-18 client and request-factory bindings in the Laravel
+container before resolving `FeatureManager`, as shown in the configuration
+examples below.
+
 ## Configuration
 
 1. **Publish the configuration**:

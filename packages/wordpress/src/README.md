@@ -106,8 +106,9 @@ When logged in as an administrator, you'll see a "Toggly" menu in the admin bar 
 
 ## Requirements
 
-- WordPress 5.0 or higher
-- PHP 7.4 or higher
+- WordPress 5.0 or higher. The maintained plugin host is validated on
+  WordPress 7.1 with PHP 8.5.
+- PHP 7.4 or higher; the package declares support through PHP 8.5.
 - Composer (for installation)
 
 ## Support

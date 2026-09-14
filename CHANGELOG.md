@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- WordPress now selects a PSR-16 v3-compatible transient-cache adapter on
+  current PHP hosts, while retaining the existing PSR-16 v1/v2 adapter for
+  PHP 7.4-compatible installations.
+- Restored the documented global `toggly_is_enabled()` template helper when
+  WordPress loads the plugin.
+- Register WordPress custom cron intervals before creating refresh and
+  telemetry events, so they are scheduled on a fresh installation.
+- MongoDB JWK snapshots preserve their existing key shape when optional JWK
+  fields are absent, without accepting keys that omit required fields.
+
 ## [1.1.1] - 2026-09-13
 
 ### Changed

@@ -121,10 +121,10 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
                     'kty' => $jwk->kty,
                     'use' => $jwk->use,
                     'kid' => $jwk->kid,
-                    'crv' => $jwk->crv,
-                    'x' => $jwk->x,
-                    'y' => $jwk->y,
-                    'alg' => $jwk->alg,
+                    'crv' => isset($jwk->crv) ? $jwk->crv : null,
+                    'x' => isset($jwk->x) ? $jwk->x : null,
+                    'y' => isset($jwk->y) ? $jwk->y : null,
+                    'alg' => isset($jwk->alg) ? $jwk->alg : null,
                 ];
             }, $jwks->keys),
         ];

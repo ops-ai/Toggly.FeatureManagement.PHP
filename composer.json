@@ -40,7 +40,7 @@
         "psr/log": "^1.0|^2.0|^3.0"
     },
     "require-dev": {
-        "google/protobuf": "^3.25|^4.0",
+        "google/protobuf": "^3.25|^4.0|^5.0",
         "illuminate/cache": "^11.47",
         "illuminate/contracts": "^11.0",
         "mongodb/mongodb": "^2.0",

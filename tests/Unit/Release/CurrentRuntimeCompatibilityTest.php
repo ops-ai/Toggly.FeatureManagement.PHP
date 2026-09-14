@@ -84,6 +84,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertNotFalse($mysqlReady);
         $this->assertNotFalse($wordpressInstall);
         $this->assertLessThan($wordpressInstall, $mysqlReady);
+
+        $wordpressJob = strstr($workflow, '  wordpress-host:');
+        $this->assertNotFalse($wordpressJob);
+        $this->assertStringContainsString("MYSQL_ROOT_HOST: '%'", $wordpressJob);
+        $this->assertStringNotContainsString('MYSQL_ALLOW_EMPTY_PASSWORD', $wordpressJob);
+        $this->assertStringNotContainsString('MYSQL_USER:', $wordpressJob);
     }
 
     public function testCorePackageRuntimeIdentityMatchesTheManifestRelease(): void

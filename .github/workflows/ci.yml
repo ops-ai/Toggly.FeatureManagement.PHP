@@ -177,6 +177,7 @@ jobs:
         env:
           MYSQL_DATABASE: wordpress
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_HOST: '%'
         options: >-
           --health-cmd="mysqladmin ping -h localhost -proot"
           --health-interval=10s

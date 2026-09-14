@@ -54,6 +54,38 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
     }
 
+    public function testRetainedHostFixturesUseScopedComposerAcknowledgementsAndWaitForMysql(): void
+    {
+        $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
+        $policyFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/configure-laravel-policy.php');
+
+        foreach ([
+            'PKSA-m5cs-t1y6-qpcs',
+            'PKSA-3r5d-mb8f-1qw9',
+            'PKSA-mdq4-51ck-6kdq',
+            'PKSA-8qx3-n5y5-vvnd',
+            'PKSA-w7xr-vk7n-rstm',
+            'PKSA-q46n-4fdk-zjr4',
+            'PKSA-qzrn-rnz3-85w1',
+        ] as $advisoryId) {
+            $this->assertStringContainsString($advisoryId, $policyFixture);
+        }
+
+        $this->assertStringContainsString('create-project --no-install --no-scripts', $workflow);
+        $this->assertStringContainsString('configure-laravel-policy.php', $workflow);
+        $this->assertStringContainsString("'on-audit' => false", $policyFixture);
+        $this->assertStringContainsString("'10.3.3' =>", $policyFixture);
+        $this->assertStringContainsString("'11.6.1' =>", $policyFixture);
+        $this->assertStringNotContainsString('--no-blocking', $workflow);
+        $this->assertStringNotContainsString('--no-security-blocking', $workflow);
+
+        $mysqlReady = strpos($workflow, '@mysqli_connect("127.0.0.1", "root", "root", "wordpress")');
+        $wordpressInstall = strpos($workflow, 'wp core install --path="$wordpress"');
+        $this->assertNotFalse($mysqlReady);
+        $this->assertNotFalse($wordpressInstall);
+        $this->assertLessThan($wordpressInstall, $mysqlReady);
+    }
+
     public function testCorePackageRuntimeIdentityMatchesTheManifestRelease(): void
     {
         $json = $this->readJson('composer.json');

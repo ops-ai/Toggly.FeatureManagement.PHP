@@ -154,8 +154,13 @@ jobs:
           set -euo pipefail
           artifacts="$RUNNER_TEMP/toggly-php-artifacts"
           host="$RUNNER_TEMP/laravel-${{ matrix.laravel-version }}"
-          composer create-project --no-interaction --prefer-dist \
+          # Composer policy is project-local. Materialize the retained Laravel
+          # 10/11 host without resolving it, then write only that temporary
+          # fixture's documented advisory acknowledgements before installation.
+          composer create-project --no-install --no-scripts --no-interaction --prefer-dist \
             laravel/laravel "$host" "v${{ matrix.laravel-version }}"
+          php tests/HostFixtures/configure-laravel-policy.php "$host" "${{ matrix.laravel-version }}"
+          composer --working-dir="$host" install --no-interaction --prefer-dist --no-progress
           composer --working-dir="$host" config repositories.toggly artifact "$artifacts"
           laravel_package_version=$(php -r '$manifest = json_decode(file_get_contents("packages/laravel/composer.json"), true, 512, JSON_THROW_ON_ERROR); echo $manifest["version"];')
           composer --working-dir="$host" require --no-interaction --no-progress \
@@ -205,6 +210,16 @@ jobs:
           wp core download --path="$wordpress" --version=7.1 --skip-content
           wp config create --path="$wordpress" --dbname=wordpress --dbuser=root \
             --dbpass=root --dbhost=127.0.0.1 --skip-check
+          for attempt in {1..30}; do
+            if php -r 'mysqli_report(MYSQLI_REPORT_OFF); $connection = @mysqli_connect("127.0.0.1", "root", "root", "wordpress"); if ($connection === false) { exit(1); } mysqli_close($connection);'; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "MySQL did not become ready for the WordPress fixture." >&2
+              exit 1
+            fi
+            sleep 2
+          done
           wp core install --path="$wordpress" --url=http://localhost \
             --title='Toggly WordPress Host' --admin_user=admin \
             --admin_password=not-a-production-password --admin_email=admin@example.invalid

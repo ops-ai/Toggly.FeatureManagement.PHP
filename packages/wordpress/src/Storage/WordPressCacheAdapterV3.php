@@ -3,6 +3,7 @@
 namespace Toggly\WordPress\Storage;
 
 use DateInterval;
+use DateTimeImmutable;
 use Psr\SimpleCache\CacheInterface;
 
 /**
@@ -28,8 +29,7 @@ class WordPressCacheAdapterV3 implements CacheInterface
 
     public function set(string $key, mixed $value, null|int|DateInterval $ttl = null): bool
     {
-        $ttl = $ttl ?? $this->defaultTtl;
-        return set_transient($key, $value, $ttl);
+        return set_transient($key, $value, $this->normalizeTtl($ttl));
     }
 
     public function delete(string $key): bool
@@ -78,5 +78,19 @@ class WordPressCacheAdapterV3 implements CacheInterface
     public function has(string $key): bool
     {
         return get_transient($key) !== false;
+    }
+
+    private function normalizeTtl(null|int|DateInterval $ttl): int
+    {
+        if ($ttl === null) {
+            return $this->defaultTtl;
+        }
+
+        if (is_int($ttl)) {
+            return $ttl;
+        }
+
+        $now = new DateTimeImmutable('@' . time());
+        return $now->add($ttl)->getTimestamp() - $now->getTimestamp();
     }
 }

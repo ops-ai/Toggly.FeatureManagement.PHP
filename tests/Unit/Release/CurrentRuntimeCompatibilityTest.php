@@ -58,8 +58,8 @@ class CurrentRuntimeCompatibilityTest extends TestCase
     {
         $json = $this->readJson('composer.json');
 
-        $this->assertSame('1.1.1', $json['version']);
-        $this->assertSame('toggly-php/1.1.1', SdkIdentity::userAgent());
+        $this->assertSame('1.1.2', $json['version']);
+        $this->assertSame('toggly-php/1.1.2', SdkIdentity::userAgent());
     }
 
     private function repoRoot(): string

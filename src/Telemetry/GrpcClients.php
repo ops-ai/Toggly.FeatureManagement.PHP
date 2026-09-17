@@ -142,6 +142,33 @@ final class GrpcClients
     }
 
     /**
+     * HTTPS usage/metrics belong on the app host. The definitions CDN is not a
+     * telemetry endpoint; posting there 404s and used to stall PHP-FPM retries.
+     */
+    public static function isDefinitionsCdn(?string $url): bool
+    {
+        if ($url === null || $url === '') {
+            return false;
+        }
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return is_string($host) && strcasecmp($host, 'definitions.toggly.io') === 0;
+    }
+
+    /**
+     * Resolve the HTTPS/gRPC metrics base URL. A blank or definitions-CDN
+     * {@see TogglySettings::$baseUrl} falls back to {@see DEFAULT_METRICS_BASE_URL}.
+     */
+    public static function resolveHttpMetricsBaseUrl(?string $configuredBaseUrl): string
+    {
+        if ($configuredBaseUrl !== null && $configuredBaseUrl !== '' && !self::isDefinitionsCdn($configuredBaseUrl)) {
+            return rtrim($configuredBaseUrl, '/') . '/';
+        }
+
+        return self::DEFAULT_METRICS_BASE_URL;
+    }
+
+    /**
      * Build a protobuf Timestamp array for wire payloads.
      *
      * @return array{seconds: int, nanos: int}

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-09-17
+
+### Fixed
+- HTTPS usage and metrics fallbacks post to `https://app.toggly.io/` instead of
+  the definitions CDN. A definitions `base_url` no longer 404s `api/usage/stats`
+  and then sleep-retries until PHP `max_execution_time` kills the request.
+- Usage and metrics HTTP flushes use a single attempt so a failed ingest cannot
+  stall PHP-FPM or `artisan serve`.
+
 ## [1.1.2] - 2026-09-13
 
 ### Fixed

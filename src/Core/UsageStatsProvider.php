@@ -252,7 +252,7 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             if ($this->grpcClient !== null) {
                 $this->grpcClient->sendStats($payload);
             } else {
-                $this->httpClient->post('api/usage/stats', $this->toHttpJsonPayload($payload));
+                $this->httpClientForUsage()->post('api/usage/stats', $this->toHttpJsonPayload($payload), 1);
             }
             $this->lastSend = time();
             $this->logger->debug('Statistics sent successfully', [
@@ -288,12 +288,16 @@ class UsageStatsProvider implements UsageStatsProviderInterface
 
     private function resolveMetricsBaseUrl(): string
     {
-        $base = $this->settings->baseUrl;
-        if ($base !== null && $base !== '') {
-            return $base;
+        return GrpcClients::resolveHttpMetricsBaseUrl($this->settings->baseUrl);
+    }
+
+    private function httpClientForUsage(): TogglyHttpClient
+    {
+        if (GrpcClients::isDefinitionsCdn($this->httpClient->getBaseUrl())) {
+            return $this->httpClient->withBaseUrl($this->resolveMetricsBaseUrl());
         }
 
-        return GrpcClients::DEFAULT_METRICS_BASE_URL;
+        return $this->httpClient;
     }
 
     /**

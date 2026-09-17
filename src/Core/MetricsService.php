@@ -228,7 +228,7 @@ class MetricsService implements MetricsServiceInterface
                 if ($this->grpcClient !== null) {
                     $this->grpcClient->sendMetrics($payload);
                 } else {
-                    $this->httpClient->post('api/metrics', $this->toHttpJsonPayload($payload));
+                    $this->httpClientForMetrics()->post('api/metrics', $this->toHttpJsonPayload($payload), 1);
                 }
                 $this->lastSend = time();
                 $this->logger->debug('Metrics sent successfully', [
@@ -260,12 +260,16 @@ class MetricsService implements MetricsServiceInterface
 
     private function resolveMetricsBaseUrl(): string
     {
-        $base = $this->settings->baseUrl;
-        if ($base !== null && $base !== '') {
-            return $base;
+        return GrpcClients::resolveHttpMetricsBaseUrl($this->settings->baseUrl);
+    }
+
+    private function httpClientForMetrics(): TogglyHttpClient
+    {
+        if (GrpcClients::isDefinitionsCdn($this->httpClient->getBaseUrl())) {
+            return $this->httpClient->withBaseUrl($this->resolveMetricsBaseUrl());
         }
 
-        return GrpcClients::DEFAULT_METRICS_BASE_URL;
+        return $this->httpClient;
     }
 
     private function incrementMeasurement(string $metricKey, ?string $featureKey, float $value, bool $enabled): void

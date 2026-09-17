@@ -118,7 +118,8 @@ class UsageStatsProviderTest extends TestCase
                 $this->callback(function ($payload) use (&$posted) {
                     $posted = $payload;
                     return isset($payload['stats'][0]['variantStats']);
-                })
+                }),
+                1
             );
 
         $provider = new UsageStatsProvider(
@@ -140,6 +141,60 @@ class UsageStatsProviderTest extends TestCase
     {
         $this->assertSame('app.toggly.io:443', GrpcClients::grpcTarget('https://app.toggly.io/'));
         $this->assertSame('example.com:8443', GrpcClients::grpcTarget('https://example.com:8443/path'));
+    }
+
+    public function testMetricsHttpBaseIgnoresDefinitionsCdn(): void
+    {
+        $this->assertTrue(GrpcClients::isDefinitionsCdn('https://definitions.toggly.io/'));
+        $this->assertTrue(GrpcClients::isDefinitionsCdn('https://definitions.toggly.io'));
+        $this->assertFalse(GrpcClients::isDefinitionsCdn('https://app.toggly.io/'));
+        $this->assertFalse(GrpcClients::isDefinitionsCdn(null));
+        $this->assertSame(
+            'https://app.toggly.io/',
+            GrpcClients::resolveHttpMetricsBaseUrl('https://definitions.toggly.io/')
+        );
+        $this->assertSame(
+            'https://app.toggly.io/',
+            GrpcClients::resolveHttpMetricsBaseUrl(null)
+        );
+        $this->assertSame(
+            'https://toggly.example/',
+            GrpcClients::resolveHttpMetricsBaseUrl('https://toggly.example')
+        );
+    }
+
+    public function testHttpFallbackRebasesDefinitionsCdnAndDoesNotRetry(): void
+    {
+        if (GrpcClients::isAvailable()) {
+            $this->markTestSkipped('gRPC available in this environment; HTTP fallback path not exercised');
+        }
+
+        $rebased = $this->createMock(TogglyHttpClient::class);
+        $rebased->expects($this->once())
+            ->method('post')
+            ->with('api/usage/stats', $this->isType('array'), 1);
+
+        $http = $this->createMock(TogglyHttpClient::class);
+        $http->method('getBaseUrl')->willReturn('https://definitions.toggly.io/');
+        $http->expects($this->once())
+            ->method('withBaseUrl')
+            ->with('https://app.toggly.io/')
+            ->willReturn($rebased);
+        $http->expects($this->never())->method('post');
+
+        $provider = new UsageStatsProvider(
+            new TogglySettings([
+                'app_key' => 'app',
+                'environment' => 'Production',
+                'base_url' => 'https://definitions.toggly.io/',
+            ]),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+        $provider->recordDefinitionCacheMiss();
+        $provider->sendStats();
     }
 
     public function testFailedSendRestoresUniqueUsageMaps(): void

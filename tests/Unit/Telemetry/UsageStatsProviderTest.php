@@ -139,22 +139,28 @@ class UsageStatsProviderTest extends TestCase
 
     public function testGrpcTarget(): void
     {
+        $this->assertSame('metrics.toggly.io:443', GrpcClients::grpcTarget('https://metrics.toggly.io/'));
         $this->assertSame('app.toggly.io:443', GrpcClients::grpcTarget('https://app.toggly.io/'));
         $this->assertSame('example.com:8443', GrpcClients::grpcTarget('https://example.com:8443/path'));
     }
 
-    public function testMetricsHttpBaseIgnoresDefinitionsCdn(): void
+    public function testMetricsHttpBaseIgnoresDefinitionsCdnAndProductApi(): void
     {
         $this->assertTrue(GrpcClients::isDefinitionsCdn('https://definitions.toggly.io/'));
         $this->assertTrue(GrpcClients::isDefinitionsCdn('https://definitions.toggly.io'));
-        $this->assertFalse(GrpcClients::isDefinitionsCdn('https://app.toggly.io/'));
+        $this->assertTrue(GrpcClients::isProductApiHost('https://app.toggly.io/'));
+        $this->assertFalse(GrpcClients::isDefinitionsCdn('https://metrics.toggly.io/'));
         $this->assertFalse(GrpcClients::isDefinitionsCdn(null));
         $this->assertSame(
-            'https://app.toggly.io/',
+            'https://metrics.toggly.io/',
             GrpcClients::resolveHttpMetricsBaseUrl('https://definitions.toggly.io/')
         );
         $this->assertSame(
-            'https://app.toggly.io/',
+            'https://metrics.toggly.io/',
+            GrpcClients::resolveHttpMetricsBaseUrl('https://app.toggly.io/')
+        );
+        $this->assertSame(
+            'https://metrics.toggly.io/',
             GrpcClients::resolveHttpMetricsBaseUrl(null)
         );
         $this->assertSame(
@@ -178,7 +184,7 @@ class UsageStatsProviderTest extends TestCase
         $http->method('getBaseUrl')->willReturn('https://definitions.toggly.io/');
         $http->expects($this->once())
             ->method('withBaseUrl')
-            ->with('https://app.toggly.io/')
+            ->with('https://metrics.toggly.io/')
             ->willReturn($rebased);
         $http->expects($this->never())->method('post');
 

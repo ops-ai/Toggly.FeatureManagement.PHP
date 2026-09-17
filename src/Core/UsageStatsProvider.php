@@ -293,7 +293,8 @@ class UsageStatsProvider implements UsageStatsProviderInterface
 
     private function httpClientForUsage(): TogglyHttpClient
     {
-        if (GrpcClients::isDefinitionsCdn($this->httpClient->getBaseUrl())) {
+        $current = $this->httpClient->getBaseUrl();
+        if (GrpcClients::isDefinitionsCdn($current) || GrpcClients::isProductApiHost($current)) {
             return $this->httpClient->withBaseUrl($this->resolveMetricsBaseUrl());
         }
 

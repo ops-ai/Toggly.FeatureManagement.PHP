@@ -265,7 +265,8 @@ class MetricsService implements MetricsServiceInterface
 
     private function httpClientForMetrics(): TogglyHttpClient
     {
-        if (GrpcClients::isDefinitionsCdn($this->httpClient->getBaseUrl())) {
+        $current = $this->httpClient->getBaseUrl();
+        if (GrpcClients::isDefinitionsCdn($current) || GrpcClients::isProductApiHost($current)) {
             return $this->httpClient->withBaseUrl($this->resolveMetricsBaseUrl());
         }
 

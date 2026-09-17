@@ -17,7 +17,7 @@ use Toggly\FeatureManagement\SdkIdentity;
  */
 final class GrpcClients
 {
-    public const DEFAULT_METRICS_BASE_URL = 'https://app.toggly.io/';
+    public const DEFAULT_METRICS_BASE_URL = 'https://metrics.toggly.io/';
 
     /**
      * gRPC metadata key for the SDK user-agent (lowercase for PHP ext-grpc).
@@ -119,7 +119,7 @@ final class GrpcClients
     {
         $raw = trim($baseUrl);
         if ($raw === '') {
-            return 'app.toggly.io:443';
+            return 'metrics.toggly.io:443';
         }
         if (strpos($raw, '://') === false) {
             $raw = 'https://' . $raw;
@@ -128,7 +128,7 @@ final class GrpcClients
         $host = $parts['host'] ?? ($parts['path'] ?? '');
         $host = rtrim((string) $host, '/');
         if ($host === '') {
-            return 'app.toggly.io:443';
+            return 'metrics.toggly.io:443';
         }
         $port = $parts['port'] ?? null;
         if ($port !== null) {
@@ -142,7 +142,7 @@ final class GrpcClients
     }
 
     /**
-     * HTTPS usage/metrics belong on the app host. The definitions CDN is not a
+     * HTTPS usage/metrics belong on the metrics host. The definitions CDN is not a
      * telemetry endpoint; posting there 404s and used to stall PHP-FPM retries.
      */
     public static function isDefinitionsCdn(?string $url): bool
@@ -156,12 +156,31 @@ final class GrpcClients
     }
 
     /**
-     * Resolve the HTTPS/gRPC metrics base URL. A blank or definitions-CDN
-     * {@see TogglySettings::$baseUrl} falls back to {@see DEFAULT_METRICS_BASE_URL}.
+     * Product dashboard / API host. Usage and metrics ingest live on
+     * {@see DEFAULT_METRICS_BASE_URL}, not here.
+     */
+    public static function isProductApiHost(?string $url): bool
+    {
+        if ($url === null || $url === '') {
+            return false;
+        }
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return is_string($host) && strcasecmp($host, 'app.toggly.io') === 0;
+    }
+
+    /**
+     * Resolve the HTTPS/gRPC metrics base URL. Blank, definitions-CDN, and
+     * product-API hosts fall back to {@see DEFAULT_METRICS_BASE_URL}.
      */
     public static function resolveHttpMetricsBaseUrl(?string $configuredBaseUrl): string
     {
-        if ($configuredBaseUrl !== null && $configuredBaseUrl !== '' && !self::isDefinitionsCdn($configuredBaseUrl)) {
+        if (
+            $configuredBaseUrl !== null
+            && $configuredBaseUrl !== ''
+            && !self::isDefinitionsCdn($configuredBaseUrl)
+            && !self::isProductApiHost($configuredBaseUrl)
+        ) {
             return rtrim($configuredBaseUrl, '/') . '/';
         }
 

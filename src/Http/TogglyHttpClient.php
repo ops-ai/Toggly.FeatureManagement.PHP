@@ -36,6 +36,25 @@ class TogglyHttpClient
         $this->logger = $logger ?? new NullLogger();
     }
 
+    public function getBaseUrl(): string
+    {
+        return $this->baseUrl;
+    }
+
+    /**
+     * Same PSR transport and identity, different origin (definitions vs app).
+     */
+    public function withBaseUrl(string $baseUrl): self
+    {
+        return new self(
+            $this->httpClient,
+            $this->requestFactory,
+            $baseUrl,
+            $this->userAgent,
+            $this->logger
+        );
+    }
+
     /**
      * Make a GET request with retry logic and ETag support
      * @param string $path API path (relative to base URL)
@@ -124,12 +143,14 @@ class TogglyHttpClient
      * Make a POST request with retry logic
      * @param string $path API path
      * @param array|string $data Request body data
+     * @param int $maxRetries Attempts before throwing. Usage/metrics request-path
+     *     flushes should pass 1 so a 404 cannot sleep through PHP max_execution_time.
      * @return ResponseInterface
      */
-    public function post(string $path, $data): ResponseInterface
+    public function post(string $path, $data, int $maxRetries = 8): ResponseInterface
     {
         $url = $this->baseUrl . ltrim($path, '/');
-        $maxRetries = 8;
+        $maxRetries = max(1, $maxRetries);
         $attempt = 0;
 
         $body = is_string($data) ? $data : json_encode($data);

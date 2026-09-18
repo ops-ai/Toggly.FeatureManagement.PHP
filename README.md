@@ -285,7 +285,7 @@ shutdown flush is registered automatically.
 
 1. When `ext-grpc` and Composer package `google/protobuf` are available, the
    SDK dials native gRPC `Usage.SendStats` / `Metrics.SendMetrics` against the
-   metrics base URL (default `https://app.toggly.io/`).
+   metrics base URL (default `https://metrics.toggly.io/`).
 2. Otherwise it soft-fails and posts the same wire shape over HTTPS JSON to
    `api/usage/stats` and `api/metrics` (gateway-accepted path). Feature
    evaluation is never blocked by telemetry failures.

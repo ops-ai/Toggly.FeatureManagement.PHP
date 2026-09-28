@@ -1,6 +1,6 @@
 {
     "name": "toggly/wordpress",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "Toggly Feature Management WordPress plugin integration",
     "type": "library",
     "keywords": [

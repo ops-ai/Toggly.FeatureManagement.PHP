@@ -60,14 +60,10 @@ class WordPressFeatureContextProvider implements FeatureContextProviderInterface
     public function getContextIdentifierWithContext($context): ?string
     {
         if (is_array($context)) {
-            if (isset($context['userId'])) {
-                return (string)$context['userId'];
-            }
-            if (isset($context['user_id'])) {
-                return (string)$context['user_id'];
-            }
-            if (isset($context['email'])) {
-                return (string)$context['email'];
+            foreach (['userId', 'user_id', 'email'] as $key) {
+                if (isset($context[$key])) {
+                    return (string)$context[$key];
+                }
             }
         }
 

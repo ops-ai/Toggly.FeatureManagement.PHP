@@ -84,7 +84,7 @@ class WordPressUri implements UriInterface
     {
         $new = clone $this;
         $parsed = parse_url($this->uri);
-        $new->uri = ($parsed['scheme'] ?? 'http') . '://' . $host . ($parsed['path'] ?? '') . 
+        $new->uri = ($parsed['scheme'] ?? 'http') . '://' . $host . ($parsed['path'] ?? '') .
                    (isset($parsed['query']) ? '?' . $parsed['query'] : '') .
                    (isset($parsed['fragment']) ? '#' . $parsed['fragment'] : '');
         return $new;

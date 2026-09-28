@@ -71,16 +71,18 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Storage {
         public function testLegacyAdapterReportsBulkWriteAndDeletionFailuresWhileContinuing(): void
         {
             $adapter = $this->legacyAdapter();
-            $GLOBALS['toggly_wordpress_cache_set_results']['second'] = false;
-            $GLOBALS['toggly_wordpress_cache_delete_results']['second'] = false;
-            $GLOBALS['toggly_wordpress_cache_values'] = ['first' => 'one', 'second' => 'two'];
+            $GLOBALS['toggly_wordpress_cache_set_results']['blocked'] = false;
+            $GLOBALS['toggly_wordpress_cache_delete_results']['blocked'] = false;
+            $GLOBALS['toggly_wordpress_cache_values'] = ['blocked' => 'old-value'];
 
-            $this->assertFalse($adapter->setMultiple(['first' => 'one', 'second' => 'two'], 30));
+            $this->assertFalse($adapter->setMultiple(['blocked' => 'value', 'stored' => 'value'], 30));
             $this->assertSame([30, 30], array_column($GLOBALS['toggly_wordpress_cache_adapter_calls'], 'expiration'));
-            $this->assertFalse($adapter->deleteMultiple(['first', 'second']));
-            $this->assertSame(['first', 'second'], $GLOBALS['toggly_wordpress_cache_delete_calls']);
-            $this->assertFalse($adapter->has('first'));
-            $this->assertTrue($adapter->has('second'));
+            $this->assertSame(['blocked', 'stored'], array_column($GLOBALS['toggly_wordpress_cache_adapter_calls'], 'key'));
+            $this->assertTrue($adapter->has('stored'));
+            $this->assertFalse($adapter->deleteMultiple(['blocked', 'stored']));
+            $this->assertSame(['blocked', 'stored'], $GLOBALS['toggly_wordpress_cache_delete_calls']);
+            $this->assertTrue($adapter->has('blocked'));
+            $this->assertFalse($adapter->has('stored'));
         }
 
         #[RunInSeparateProcess]
@@ -101,6 +103,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Storage {
             $GLOBALS['toggly_wordpress_cache_values']['present'] = 'value';
             $GLOBALS['toggly_wordpress_cache_set_results']['blocked'] = false;
             $GLOBALS['toggly_wordpress_cache_delete_results']['blocked'] = false;
+            $GLOBALS['toggly_wordpress_cache_values']['blocked'] = 'old-value';
 
             $this->assertSame('value', $adapter->get('present'));
             $this->assertSame('fallback', $adapter->get('missing', 'fallback'));
@@ -109,9 +112,13 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Storage {
                 $adapter->getMultiple(['present', 'missing'], 'fallback')
             );
             $this->assertTrue($adapter->has('present'));
-            $this->assertFalse($adapter->setMultiple(['stored' => 'value', 'blocked' => 'value'], 30));
-            $this->assertFalse($adapter->deleteMultiple(['present', 'blocked']));
-            $this->assertFalse($adapter->has('present'));
+            $this->assertFalse($adapter->setMultiple(['blocked' => 'value', 'stored' => 'value'], 30));
+            $this->assertSame(['blocked', 'stored'], array_column($GLOBALS['toggly_wordpress_cache_adapter_calls'], 'key'));
+            $this->assertTrue($adapter->has('stored'));
+            $this->assertFalse($adapter->deleteMultiple(['blocked', 'stored']));
+            $this->assertSame(['blocked', 'stored'], $GLOBALS['toggly_wordpress_cache_delete_calls']);
+            $this->assertTrue($adapter->has('blocked'));
+            $this->assertFalse($adapter->has('stored'));
             $this->assertTrue($adapter->clear());
             $this->assertCount(1, $GLOBALS['wpdb']->queries);
         }

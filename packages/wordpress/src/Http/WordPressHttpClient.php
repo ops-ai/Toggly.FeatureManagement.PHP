@@ -34,7 +34,7 @@ class WordPressHttpClient implements ClientInterface
         $response = wp_remote_request($url, $args);
 
         if (is_wp_error($response)) {
-            throw new \RuntimeException('HTTP request failed: ' . $response->get_error_message());
+            throw new WordPressHttpClientException('HTTP request failed: ' . $response->get_error_message());
         }
 
         return new WordPressResponse($response);

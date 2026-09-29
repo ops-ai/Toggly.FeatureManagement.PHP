@@ -53,7 +53,7 @@ class MonorepoSplitContractTest extends TestCase
         $this->assertNotFalse($yml);
 
         $this->assertStringContainsString('manifest_path: composer.json', $yml);
-        $this->assertStringContainsString('danharrin/monorepo-split-github-action@v2.4.0', $yml);
+        $this->assertStringContainsString('danharrin/monorepo-split-github-action@v2.4.5', $yml);
         $this->assertStringContainsString('packages/${{ matrix.package.local_path }}', $yml);
         $this->assertStringContainsString('Toggly.FeatureManagement.PHP.Laravel', $yml);
         $this->assertStringContainsString('Toggly.FeatureManagement.PHP.Wordpress', $yml);

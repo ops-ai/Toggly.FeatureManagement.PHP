@@ -112,7 +112,7 @@ namespace {
     if (!function_exists('get_transient')) {
         function get_transient(string $key): mixed
         {
-            return false;
+            return $GLOBALS['toggly_wordpress_cache_values'][$key] ?? false;
         }
     }
 
@@ -182,6 +182,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Admin {
             $GLOBALS['toggly_wordpress_admin_shortcodes'] = [];
             $GLOBALS['toggly_wordpress_admin_scheduled'] = [];
             $GLOBALS['toggly_wordpress_admin_schedule_calls'] = [];
+            $GLOBALS['toggly_wordpress_cache_values'] = [];
             $GLOBALS['toggly_wordpress_http_response'] = [
                 'response' => ['code' => 200, 'message' => 'OK'],
                 'headers' => [],
@@ -292,10 +293,19 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Admin {
 
         public function testTemplateFunctionAndShortcodeUseThePluginFeatureDecision(): void
         {
+            $GLOBALS['toggly_wordpress_cache_values']['toggly_features'] = [
+                'features' => [
+                    ['featureKey' => 'checkout', 'filters' => []],
+                    ['featureKey' => 'visible', 'filters' => [['name' => 'AlwaysOn']]],
+                ],
+            ];
             $plugin = TogglyPlugin::getInstance();
             $plugin->init();
 
             $this->assertFalse(\toggly_is_enabled('checkout'));
+            $this->assertTrue(\toggly_is_enabled('visible'));
+            $this->assertSame('', $plugin->shortcodeTogglyFeature(['name' => 'checkout'], 'hidden'));
+            $this->assertSame('rendered:shown', $plugin->shortcodeTogglyFeature(['name' => 'visible'], 'shown'));
             $this->assertSame('', $plugin->shortcodeTogglyFeature([], 'hidden'));
         }
 

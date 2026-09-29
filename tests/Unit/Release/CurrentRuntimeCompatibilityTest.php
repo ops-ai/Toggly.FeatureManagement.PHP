@@ -67,6 +67,7 @@ class CurrentRuntimeCompatibilityTest extends TestCase
             'PKSA-w7xr-vk7n-rstm',
             'PKSA-q46n-4fdk-zjr4',
             'PKSA-qzrn-rnz3-85w1',
+            'PKSA-d5tc-s1qs-h781',
         ] as $advisoryId) {
             $this->assertStringContainsString($advisoryId, $policyFixture);
         }
@@ -96,6 +97,38 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $wordpressService = strstr($wordpressService, "\n\n    steps:", true);
         $this->assertNotFalse($wordpressService);
         $this->assertStringContainsString("ports:\n          - 3306:3306", $wordpressService);
+    }
+
+    public function testRetainedLaravelPoliciesAcknowledgeTheNewAdvisoryWithoutHidingItFromAudit(): void
+    {
+        foreach (['10.3.3', '11.6.1'] as $laravelVersion) {
+            $hostDirectory = sys_get_temp_dir() . '/toggly-laravel-policy-' . bin2hex(random_bytes(8));
+            mkdir($hostDirectory);
+            $manifestPath = $hostDirectory . '/composer.json';
+            file_put_contents($manifestPath, "{}\n");
+
+            try {
+                $command = sprintf(
+                    '%s %s %s %s',
+                    escapeshellarg(PHP_BINARY),
+                    escapeshellarg($this->repoRoot() . '/tests/HostFixtures/configure-laravel-policy.php'),
+                    escapeshellarg($hostDirectory),
+                    escapeshellarg($laravelVersion)
+                );
+                exec($command, $output, $exitCode);
+
+                $this->assertSame(0, $exitCode, implode("\n", $output));
+
+                $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+                $acknowledgement = $manifest['config']['policy']['advisories']['ignore-id']['PKSA-d5tc-s1qs-h781'];
+
+                $this->assertFalse($acknowledgement['on-audit']);
+                $this->assertStringContainsString("Retained Laravel {$laravelVersion} fixture", $acknowledgement['reason']);
+            } finally {
+                unlink($manifestPath);
+                rmdir($hostDirectory);
+            }
+        }
     }
 
     public function testCorePackageRuntimeIdentityMatchesTheManifestRelease(): void

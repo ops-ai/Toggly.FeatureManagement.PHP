@@ -243,8 +243,9 @@ jobs:
   sonar:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
-    needs: [test, dependency-check]
-    if: always()
+    needs: [test]
+    outputs:
+      scan_mode: ${{ steps.sonar-eligibility.outputs.scan }}
 
     steps:
       - name: Checkout code
@@ -257,12 +258,11 @@ jobs:
         with:
           name: php-coverage
           path: coverage/
-        continue-on-error: true
 
-      - name: List coverage files
+      - name: Require coverage and test reports
         run: |
-          echo "Coverage files:"
-          find coverage -type f || echo "No coverage files found"
+          test -s coverage/coverage.xml
+          test -s coverage/test-results.xml
 
       - name: Normalize paths in test results
         run: |
@@ -270,10 +270,43 @@ jobs:
             sed -i "s|${GITHUB_WORKSPACE}/||g" coverage/test-results.xml
             echo "Paths normalized in test-results.xml"
           else
-            echo "test-results.xml not found, skipping normalization"
+            echo "::error::PHPUnit test results are required for Sonar analysis." >&2
+            exit 1
           fi
 
-      - name: SonarCloud Scan
+      # Pull requests from forks do not receive repository secrets. Do not
+      # expose credentials through pull_request_target; record the deliberate
+      # skip instead. Trusted pushes and same-repository PRs must scan.
+      - name: Determine whether credentialed scans may run
+        id: sonar-eligibility
+        env:
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}
+        run: |
+          if [ "$IS_FORK" = "true" ]; then
+            echo "scan=false" >> "$GITHUB_OUTPUT"
+            echo "Sonar scans are skipped for forked pull requests because repository secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "scan=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require Sonar credentials for trusted analysis
+        if: steps.sonar-eligibility.outputs.scan == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_SERVER_TOKEN: ${{ secrets.SONAR_SERVER_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          missing_credentials=""
+          [ -n "$SONAR_TOKEN" ] || missing_credentials="SONAR_TOKEN"
+          [ -n "$SONAR_SERVER_TOKEN" ] || missing_credentials="${missing_credentials:+$missing_credentials, }SONAR_SERVER_TOKEN"
+          [ -n "$SONAR_HOST_URL" ] || missing_credentials="${missing_credentials:+$missing_credentials, }SONAR_HOST_URL"
+          if [ -n "$missing_credentials" ]; then
+            echo "::error::Required Sonar credentials are unavailable: $missing_credentials." >&2
+            exit 1
+          fi
+
+      - name: SonarCloud Scan and Quality Gate
+        if: steps.sonar-eligibility.outputs.scan == 'true'
         uses: SonarSource/sonarqube-scan-action@v8.2.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -289,16 +322,11 @@ jobs:
             -Dsonar.exclusions=**/vendor/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
-        continue-on-error: true
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
 
-      - name: Download Dependency Check report (for SonarQube Server)
-        uses: actions/download-artifact@v8
-        with:
-          name: dependency-check-report-php
-          path: dependency-check-reports/
-        continue-on-error: true
-
-      - name: SonarQube Server Scan
+      - name: SonarQube Server Scan and Quality Gate
+        if: steps.sonar-eligibility.outputs.scan == 'true'
         uses: SonarSource/sonarqube-scan-action@v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_SERVER_TOKEN }}
@@ -312,8 +340,8 @@ jobs:
             -Dsonar.exclusions=**/vendor/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
-            -Dsonar.dependencyCheck.reportPath=dependency-check-reports/dependency-check-report.xml
-        continue-on-error: true
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
 
   dependency-check:
     name: OWASP Dependency Check
@@ -373,10 +401,23 @@ jobs:
 
     steps:
       - name: Generate summary
+        env:
+          SONAR_RESULT: ${{ needs.sonar.result }}
+          SONAR_SCAN_MODE: ${{ needs.sonar.outputs.scan_mode }}
         run: |
           echo "## PHP SDK Analysis Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Analysis workflow completed" >> $GITHUB_STEP_SUMMARY
+          if [ "$SONAR_RESULT" != "success" ]; then
+            echo "::error::Sonar analysis did not complete successfully (result: $SONAR_RESULT)." >&2
+            exit 1
+          elif [ "$SONAR_SCAN_MODE" = "true" ]; then
+            echo "SonarCloud and SonarQube Server scans completed with quality-gate waits." >> $GITHUB_STEP_SUMMARY
+          elif [ "$SONAR_SCAN_MODE" = "false" ]; then
+            echo "Sonar scans were skipped for a forked pull request; no credentialed gate was run." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::error::Sonar scan mode was not recorded." >&2
+            exit 1
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### PHP Versions Tested" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.2" >> $GITHUB_STEP_SUMMARY

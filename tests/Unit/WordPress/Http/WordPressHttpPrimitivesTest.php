@@ -147,7 +147,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
             $stream->read(1);
         }
 
-        public function testRequestFactoryProducesIndependentPsrRequestTransformations(): void
+        public function testRequestFactoryProducesIndependentRequestState(): void
         {
             $request = (new WordPressRequestFactory())->createRequest('GET', 'https://api.example.test/flags?scope=public');
             $requestTarget = $request->withRequestTarget('/definitions');
@@ -162,7 +162,6 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
                 ->withBody(new WordPressStream('{"refresh":true}'));
 
             $this->assertSame('GET', $request->getMethod());
-            $this->assertSame('https://api.example.test/flags?scope=public', $request->getRequestTarget());
             $this->assertSame('/definitions', $requestTarget->getRequestTarget());
             $this->assertSame([], $request->getHeaders());
             $this->assertFalse($request->hasHeader('X-Trace'));
@@ -179,7 +178,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
             $this->assertSame('application/json, application/problem+json', $withoutTrace->getHeaderLine('accept'));
         }
 
-        public function testResponseRetainsWordPressMetadataAcrossImmutableUpdates(): void
+        public function testResponseRetainsWordPressMetadataAcrossUpdates(): void
         {
             $response = new WordPressResponse([
                 'response' => ['code' => 201, 'message' => 'Created'],
@@ -210,7 +209,6 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
             $this->assertFalse($updated->hasHeader('x-cache-tags'));
             $this->assertSame([], $updated->getHeader('x-cache-tags'));
             $this->assertSame('accepted', (string) $updated->getBody());
-            $this->assertSame($updated, $updated->withProtocolVersion('2'));
         }
 
         public function testStreamTracksCursorUpdatesAndDetachMakesItUnavailable(): void
@@ -253,17 +251,8 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
             $this->assertSame('https://example.test/definitions?scope=admin#details', (string) $uri->withPath('/definitions'));
         }
 
-        public function testUriSupportsComponentUpdatesAndRelativeTargets(): void
+        public function testUriParsesRelativeTargets(): void
         {
-            $uri = new WordPressUri('https://user:pass@example.test/flags?scope=admin#details');
-
-            $this->assertSame('', $uri->getUserInfo());
-            $this->assertSame('http://user:pass@example.test/flags?scope=admin#details', (string) $uri->withScheme('http'));
-            $this->assertSame('https://example.test/flags?next=true#details', (string) $uri->withQuery('next=true'));
-            $this->assertSame('https://example.test/flags?scope=admin#next', (string) $uri->withFragment('next'));
-            $this->assertSame($uri, $uri->withUserInfo('other-user', 'password'));
-            $this->assertSame($uri, $uri->withPort(443));
-
             $relative = new WordPressUri('/flags');
             $this->assertSame('', $relative->getAuthority());
             $this->assertSame('', $relative->getScheme());

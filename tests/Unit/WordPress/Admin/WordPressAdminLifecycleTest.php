@@ -182,6 +182,11 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Admin {
             $GLOBALS['toggly_wordpress_admin_shortcodes'] = [];
             $GLOBALS['toggly_wordpress_admin_scheduled'] = [];
             $GLOBALS['toggly_wordpress_admin_schedule_calls'] = [];
+            $GLOBALS['toggly_wordpress_http_response'] = [
+                'response' => ['code' => 200, 'message' => 'OK'],
+                'headers' => [],
+                'body' => '',
+            ];
 
             $this->resetPluginSingleton();
         }
@@ -294,9 +299,24 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Admin {
             $this->assertSame('', $plugin->shortcodeTogglyFeature([], 'hidden'));
         }
 
+        public function testPluginSingletonCanBeResetForFixtureIsolation(): void
+        {
+            $original = TogglyPlugin::getInstance();
+
+            $this->resetPluginSingleton();
+
+            $this->assertNotSame($original, TogglyPlugin::getInstance());
+        }
+
         private function resetPluginSingleton(): void
         {
             $instance = new ReflectionProperty(TogglyPlugin::class, 'instance');
+            // PHP 7.4 and 8.0 require explicit reflection access. PHP 8.1+
+            // makes it implicit; avoiding the call there also avoids PHP 8.5's
+            // deprecation warning.
+            if (PHP_VERSION_ID < 80100) {
+                $instance->setAccessible(true);
+            }
             $instance->setValue(null, null);
         }
     }

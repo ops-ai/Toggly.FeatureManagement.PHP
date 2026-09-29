@@ -62,6 +62,8 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
     use Toggly\WordPress\Http\WordPressHttpClient;
     use Toggly\WordPress\Http\WordPressHttpClientException;
     use Toggly\WordPress\Http\WordPressRequest;
+    use Toggly\WordPress\Http\WordPressRequestFactory;
+    use Toggly\WordPress\Http\WordPressResponse;
     use Toggly\WordPress\Http\WordPressStream;
     use Toggly\WordPress\Http\WordPressUri;
 
@@ -90,6 +92,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
                 'user_email' => 'member@example.test',
             ];
             $this->assertSame('member@example.test', $provider->getContextIdentifier());
+            $this->assertTrue($provider->accessedInRequestWithContext('checkout', ['userId' => 'context-id']));
             $this->assertSame('context-id', $provider->getContextIdentifierWithContext(['userId' => 'context-id']));
             $this->assertSame('legacy-id', $provider->getContextIdentifierWithContext(['user_id' => 'legacy-id']));
             $this->assertSame('context@example.test', $provider->getContextIdentifierWithContext(['email' => 'context@example.test']));
@@ -103,6 +106,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
 
             $GLOBALS['toggly_wordpress_current_user'] = (object) ['ID' => 0, 'user_email' => ''];
             $this->assertSame('203.0.113.10', $provider->getContextIdentifier());
+            $this->assertSame('203.0.113.10', $provider->getContextIdentifierWithContext('not-an-array'));
         }
 
         public function testHttpClientMapsPsrRequestToTheWordPressHttpApi(): void
@@ -143,6 +147,97 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
             $stream->read(1);
         }
 
+        public function testRequestFactoryProducesIndependentPsrRequestTransformations(): void
+        {
+            $request = (new WordPressRequestFactory())->createRequest('GET', 'https://api.example.test/flags?scope=public');
+            $requestTarget = $request->withRequestTarget('/definitions');
+
+            $updated = $requestTarget
+                ->withMethod('POST')
+                ->withProtocolVersion('2')
+                ->withUri(new WordPressUri('https://definitions.example.test/v2'))
+                ->withHeader('X-Trace', 'first')
+                ->withAddedHeader('x-trace', ['second', 'third'])
+                ->withHeader('Accept', ['application/json', 'application/problem+json'])
+                ->withBody(new WordPressStream('{"refresh":true}'));
+
+            $this->assertSame('GET', $request->getMethod());
+            $this->assertSame('https://api.example.test/flags?scope=public', $request->getRequestTarget());
+            $this->assertSame('/definitions', $requestTarget->getRequestTarget());
+            $this->assertSame([], $request->getHeaders());
+            $this->assertFalse($request->hasHeader('X-Trace'));
+            $this->assertSame('POST', $updated->getMethod());
+            $this->assertSame('2', $updated->getProtocolVersion());
+            $this->assertSame('https://definitions.example.test/v2', (string) $updated->getUri());
+            $this->assertSame(['first', 'second', 'third'], $updated->getHeader('X-Trace'));
+            $this->assertSame('first, second, third', $updated->getHeaderLine('x-trace'));
+            $this->assertSame('{"refresh":true}', (string) $updated->getBody());
+
+            $withoutTrace = $updated->withoutHeader('X-Trace');
+            $this->assertFalse($withoutTrace->hasHeader('x-trace'));
+            $this->assertSame([], $withoutTrace->getHeader('x-trace'));
+            $this->assertSame('application/json, application/problem+json', $withoutTrace->getHeaderLine('accept'));
+        }
+
+        public function testResponseRetainsWordPressMetadataAcrossImmutableUpdates(): void
+        {
+            $response = new WordPressResponse([
+                'response' => ['code' => 201, 'message' => 'Created'],
+                'headers' => [
+                    'X-Request-Id' => 'request-1',
+                    'X-Cache-Tags' => ['feature', 'definitions'],
+                ],
+                'body' => 'created',
+            ]);
+
+            $updated = $response
+                ->withStatus(202, 'Accepted')
+                ->withHeader('X-Request-Id', 'replacement')
+                ->withAddedHeader('x-request-id', 'follow-up')
+                ->withoutHeader('X-Cache-Tags')
+                ->withBody(new WordPressStream('accepted'));
+
+            $this->assertSame(201, $response->getStatusCode());
+            $this->assertSame('Created', $response->getReasonPhrase());
+            $this->assertSame('1.1', $response->getProtocolVersion());
+            $this->assertTrue($response->hasHeader('x-cache-tags'));
+            $this->assertSame(['x-request-id' => ['request-1'], 'x-cache-tags' => ['feature', 'definitions']], $response->getHeaders());
+            $this->assertSame('feature, definitions', $response->getHeaderLine('X-Cache-Tags'));
+            $this->assertSame('created', (string) $response->getBody());
+            $this->assertSame(202, $updated->getStatusCode());
+            $this->assertSame('Accepted', $updated->getReasonPhrase());
+            $this->assertSame(['replacement', 'follow-up'], $updated->getHeader('X-Request-Id'));
+            $this->assertFalse($updated->hasHeader('x-cache-tags'));
+            $this->assertSame([], $updated->getHeader('x-cache-tags'));
+            $this->assertSame('accepted', (string) $updated->getBody());
+            $this->assertSame($updated, $updated->withProtocolVersion('2'));
+        }
+
+        public function testStreamTracksCursorUpdatesAndDetachMakesItUnavailable(): void
+        {
+            $stream = new WordPressStream('abcdef');
+
+            $this->assertSame(6, $stream->getSize());
+            $stream->seek(2);
+            $this->assertSame(2, $stream->tell());
+            $this->assertSame('cd', $stream->read(2));
+            $stream->seek(-1, SEEK_CUR);
+            $this->assertSame('d', $stream->read(1));
+            $stream->seek(-2, SEEK_END);
+            $this->assertSame('ef', $stream->getContents());
+            $this->assertTrue($stream->eof());
+
+            $stream->rewind();
+            $this->assertSame(2, $stream->write('XY'));
+            $this->assertSame('cdef', $stream->getContents());
+            $this->assertNull($stream->getMetadata('wrapper_type'));
+
+            $detached = new WordPressStream('temporary');
+            $this->assertNull($detached->detach());
+            $this->assertNull($detached->getSize());
+            $this->assertSame('', (string) $detached);
+        }
+
         public function testUriMutatorsRetainTheOtherUriComponents(): void
         {
             $uri = new WordPressUri('https://user:pass@example.test:8443/flags?scope=admin#details');
@@ -156,6 +251,27 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
             $this->assertSame('details', $uri->getFragment());
             $this->assertSame('https://api.example.test/flags?scope=admin#details', (string) $uri->withHost('api.example.test'));
             $this->assertSame('https://example.test/definitions?scope=admin#details', (string) $uri->withPath('/definitions'));
+        }
+
+        public function testUriSupportsComponentUpdatesAndRelativeTargets(): void
+        {
+            $uri = new WordPressUri('https://user:pass@example.test/flags?scope=admin#details');
+
+            $this->assertSame('', $uri->getUserInfo());
+            $this->assertSame('http://user:pass@example.test/flags?scope=admin#details', (string) $uri->withScheme('http'));
+            $this->assertSame('https://example.test/flags?next=true#details', (string) $uri->withQuery('next=true'));
+            $this->assertSame('https://example.test/flags?scope=admin#next', (string) $uri->withFragment('next'));
+            $this->assertSame($uri, $uri->withUserInfo('other-user', 'password'));
+            $this->assertSame($uri, $uri->withPort(443));
+
+            $relative = new WordPressUri('/flags');
+            $this->assertSame('', $relative->getAuthority());
+            $this->assertSame('', $relative->getScheme());
+            $this->assertSame('', $relative->getHost());
+            $this->assertNull($relative->getPort());
+            $this->assertSame('/flags', $relative->getPath());
+            $this->assertSame('', $relative->getQuery());
+            $this->assertSame('', $relative->getFragment());
         }
     }
 }

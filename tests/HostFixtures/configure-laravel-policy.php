@@ -16,6 +16,7 @@ $retainedHostAdvisories = [
         'PKSA-mdq4-51ck-6kdq',
         'PKSA-8qx3-n5y5-vvnd',
         'PKSA-w7xr-vk7n-rstm',
+        'PKSA-d5tc-s1qs-h781',
     ],
     '11.6.1' => [
         'PKSA-m5cs-t1y6-qpcs',
@@ -25,6 +26,7 @@ $retainedHostAdvisories = [
         'PKSA-w7xr-vk7n-rstm',
         'PKSA-q46n-4fdk-zjr4',
         'PKSA-qzrn-rnz3-85w1',
+        'PKSA-d5tc-s1qs-h781',
     ],
 ];
 

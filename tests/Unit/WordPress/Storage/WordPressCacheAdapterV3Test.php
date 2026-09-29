@@ -25,7 +25,11 @@ class WordPressCacheAdapterV3Test extends TestCase
 {
     protected function setUp(): void
     {
+        $GLOBALS['toggly_wordpress_cache_values'] = [];
         $GLOBALS['toggly_wordpress_cache_adapter_calls'] = [];
+        $GLOBALS['toggly_wordpress_cache_set_results'] = [];
+        $GLOBALS['toggly_wordpress_cache_delete_calls'] = [];
+        $GLOBALS['toggly_wordpress_cache_delete_results'] = [];
     }
 
     public function testSetConvertsDateIntervalToTransientExpirationSeconds(): void

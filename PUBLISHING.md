@@ -115,3 +115,23 @@ Core must not ship `Toggly\Laravel` / `Toggly\WordPress` classes.
 | `SONAR_SERVER_TOKEN` | SonarQube Server token |
 | `SONAR_HOST_URL` | SonarQube Server URL |
 | `NVD_API_KEY` | NVD API key for OWASP dependency check |
+
+## Sonar analysis access prerequisites
+
+The CI workflow fails trusted repository pushes and pull requests when any
+Sonar credential above is absent, a scanner fails, or either quality gate fails.
+Forked pull requests deliberately skip credentialed scans because GitHub does
+not provide repository secrets to them.
+
+Before enabling a green trusted Sonar run, a repository owner must complete
+these external steps; this repository cannot create the binding or secrets:
+
+1. Bind the SonarCloud project `toggly-sdks-php` in the `ops-ai` organization
+   to `ops-ai/Toggly.FeatureManagement.PHP`, and grant the token used for
+   `SONAR_TOKEN` permission to analyze that project and report pull requests.
+2. Add `SONAR_TOKEN` as a repository Actions secret. The token value must stay
+   only in SonarCloud and GitHub Secrets.
+3. Create or authorize the PHP project on the organization SonarQube Server,
+   then add repository Actions secrets `SONAR_HOST_URL` and
+   `SONAR_SERVER_TOKEN`. The server token must be allowed to analyze the PHP
+   project and query its quality gate.

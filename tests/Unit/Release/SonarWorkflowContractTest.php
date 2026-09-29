@@ -24,6 +24,13 @@ class SonarWorkflowContractTest extends TestCase
         foreach (['SONAR_TOKEN', 'SONAR_SERVER_TOKEN', 'SONAR_HOST_URL'] as $credential) {
             $this->assertStringContainsString($credential, $sonar);
         }
+
+        $this->assertMatchesRegularExpression(
+            '/if \\[ -n "\\$missing_credentials" \\]; then\\s+'
+            . 'echo "::error::Required Sonar credentials are unavailable: \\$missing_credentials\\." >&2\\s+'
+            . 'exit 1\\s+fi/',
+            $sonar
+        );
     }
 
     public function testForkedPullRequestsSkipCredentialedScansWithoutUsingPullRequestTarget(): void

@@ -97,6 +97,7 @@ namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Storage {
             $this->assertStringContainsString('_transient_timeout_%', $GLOBALS['wpdb']->queries[0]);
         }
 
+        #[RunInSeparateProcess]
         public function testV3AdapterHandlesTransientDeletionFailuresAndClear(): void
         {
             $adapter = new WordPressCacheAdapterV3();

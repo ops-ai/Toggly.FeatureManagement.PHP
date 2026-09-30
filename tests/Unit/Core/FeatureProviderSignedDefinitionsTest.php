@@ -35,7 +35,11 @@ final class FeatureProviderSignedDefinitionsTest extends TestCase
         $http=$this->createMock(TogglyHttpClient::class);$http->method('get')->willReturn($response);$http->method('getLastETag')->willReturn(null);
         $provider=new FeatureProvider(new TogglySettings(['app_key'=>'app','environment'=>'Production','use_signed_definitions'=>true,'enable_live_updates'=>false]),$http,$this->createStub(FeatureStateServiceInterface::class));
         $verifier=$this->createMock(EcdsaSignatureVerifier::class);$verifier->method('verify')->willReturn($valid);
-        (new \ReflectionProperty($provider,'signatureVerifier'))->setValue($provider,$verifier);
+        $property = new \ReflectionProperty($provider, 'signatureVerifier');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+        $property->setValue($provider, $verifier);
         return $provider;
     }
 }

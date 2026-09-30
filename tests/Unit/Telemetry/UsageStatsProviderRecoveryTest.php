@@ -160,6 +160,9 @@ class UsageStatsProviderRecoveryTest extends TestCase
         );
 
         $restore = new \ReflectionMethod(UsageStatsProvider::class, 'restoreFromPayload');
+        if (PHP_VERSION_ID < 80100) {
+            $restore->setAccessible(true);
+        }
         $restore->invoke($provider, [
             'stats' => [
                 'not-a-stat',
@@ -206,6 +209,9 @@ class UsageStatsProviderRecoveryTest extends TestCase
     private function setPrivateProperty(object $object, string $property, $value): void
     {
         $reflection = new \ReflectionProperty($object, $property);
+        if (PHP_VERSION_ID < 80100) {
+            $reflection->setAccessible(true);
+        }
         $reflection->setValue($object, $value);
     }
 
@@ -213,6 +219,9 @@ class UsageStatsProviderRecoveryTest extends TestCase
     private function privateProperty(object $object, string $property)
     {
         $reflection = new \ReflectionProperty($object, $property);
+        if (PHP_VERSION_ID < 80100) {
+            $reflection->setAccessible(true);
+        }
         return $reflection->getValue($object);
     }
 }

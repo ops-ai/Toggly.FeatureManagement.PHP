@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-09-30
+
+### Fixed
+- Rebuild server-evaluated variant results from persisted raw definitions after a
+  snapshot-backed PHP process restart, so enabled variants retain their name and
+  configuration without a network refresh.
+
 ## [1.1.3] - 2026-09-17
 
 ### Fixed

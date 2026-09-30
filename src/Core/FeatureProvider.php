@@ -197,6 +197,10 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 $this->lastDefinitionsTimestamp = (int)$snapshot['timestamp'];
             }
 
+            if ($this->settings->enableVariants) {
+                $this->restoreVariantEntriesFromSnapshot($snapshot['signedDefsJson'] ?? null);
+            }
+
             // Load definitions from snapshot
             foreach ($features as $featureDefinition) {
                 $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
@@ -628,7 +632,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             }
         }
 
-        $this->variantEntries = [];
+        $this->variantEntries = $this->buildVariantEntries($defsRaw);
         $features = [];
 
         foreach ($defsRaw as $featureKey => $row) {
@@ -692,6 +696,53 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
         $this->tryConnectWebSocket();
         return true;
+    }
+
+    /**
+     * Restore evaluated variant results from the exact raw defs bytes retained in a snapshot.
+     */
+    private function restoreVariantEntriesFromSnapshot(?string $rawDefs): void
+    {
+        $this->variantEntries = [];
+        if ($rawDefs === null || $rawDefs === '') {
+            return;
+        }
+
+        try {
+            $defs = json_decode($rawDefs, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $this->logger->warning('Snapshot has invalid evaluated-variants defs', ['error' => $e->getMessage()]);
+            return;
+        }
+
+        if (!is_array($defs)) {
+            $this->logger->warning('Snapshot evaluated-variants defs must be an object');
+            return;
+        }
+
+        $this->variantEntries = $this->buildVariantEntries($defs);
+    }
+
+    /**
+     * @param array<mixed> $defsRaw
+     * @return array<string, array{enabled: bool, variant: string, configurationValue: mixed}>
+     */
+    private function buildVariantEntries(array $defsRaw): array
+    {
+        $entries = [];
+        foreach ($defsRaw as $featureKey => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $entries[(string)$featureKey] = [
+                'enabled' => (bool)($row['enabled'] ?? false),
+                'variant' => isset($row['variant']) ? (string)$row['variant'] : '',
+                'configurationValue' => $row['configurationValue'] ?? null,
+            ];
+        }
+
+        return $entries;
     }
 
     /**

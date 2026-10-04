@@ -9,6 +9,7 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
+use Toggly\FeatureManagement\Exceptions\TogglyException;
 use Toggly\FeatureManagement\SegmentMembershipClient;
 
 class SegmentMembershipClientTest extends TestCase
@@ -43,7 +44,7 @@ class SegmentMembershipClientTest extends TestCase
     public function testHttpErrorThrows(): void
     {
         $client = $this->client(403, '{}');
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(TogglyException::class);
         $this->expectExceptionMessage('403');
         $client->listSegments();
     }

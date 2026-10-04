@@ -5,12 +5,15 @@ namespace Toggly\FeatureManagement;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Toggly\FeatureManagement\Exceptions\TogglyException;
 
 /**
  * Backend-key client for targeting-list membership on app.toggly.io.
  */
 class SegmentMembershipClient
 {
+    private const SEGMENTS_PATH = '/api/v2/segments';
+
     private ClientInterface $http;
     private RequestFactoryInterface $requests;
     private StreamFactoryInterface $streams;
@@ -33,22 +36,22 @@ class SegmentMembershipClient
 
     public function listSegments(): array
     {
-        return $this->send('GET', '/api/v2/segments');
+        return $this->send('GET', self::SEGMENTS_PATH);
     }
 
     public function addSegmentMembers(string $segment, array $identifiers): array
     {
-        return $this->send('POST', '/api/v2/segments/' . rawurlencode($segment) . '/items', ['identifiers' => $identifiers]);
+        return $this->send('POST', $this->itemsPath($segment), ['identifiers' => $identifiers]);
     }
 
     public function removeSegmentMembers(string $segment, array $identifiers): array
     {
-        return $this->send('DELETE', '/api/v2/segments/' . rawurlencode($segment) . '/items', ['identifiers' => $identifiers]);
+        return $this->send('DELETE', $this->itemsPath($segment), ['identifiers' => $identifiers]);
     }
 
     public function replaceSegmentMembers(string $segment, array $identifiers): array
     {
-        return $this->send('PUT', '/api/v2/segments/' . rawurlencode($segment) . '/items', ['identifiers' => $identifiers]);
+        return $this->send('PUT', $this->itemsPath($segment), ['identifiers' => $identifiers]);
     }
 
     private function send(string $method, string $path, ?array $body = null): array
@@ -64,8 +67,13 @@ class SegmentMembershipClient
         $response = $this->http->sendRequest($request);
         $payload = (string) $response->getBody();
         if ($response->getStatusCode() >= 400) {
-            throw new \RuntimeException('Segment membership ' . $method . ' ' . $path . ' failed: ' . $response->getStatusCode());
+            throw new TogglyException('Segment membership ' . $method . ' ' . $path . ' failed: ' . $response->getStatusCode());
         }
         return json_decode($payload, true) ?? [];
+    }
+
+    private function itemsPath(string $segment): string
+    {
+        return self::SEGMENTS_PATH . '/' . rawurlencode($segment) . '/items';
     }
 }

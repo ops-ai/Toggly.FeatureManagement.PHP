@@ -1,16 +1,25 @@
 <?php
 
 namespace Toggly\FeatureManagement\Http {
-    function stream_socket_client($address, &$errno = null, &$errstr = null): mixed
+    function stream_socket_client($address, &$errno = null, &$errstr = null, ...$options): mixed
     {
-        $errno = 0;
-        $errstr = '';
-        return $GLOBALS['toggly_protocol_test_socket'] ?? false;
+        if ($address === 'tcp://loopback.test:8080' && array_key_exists('toggly_protocol_test_socket', $GLOBALS)) {
+            $errno = 0;
+            $errstr = '';
+            return $GLOBALS['toggly_protocol_test_socket'];
+        }
+
+        return \stream_socket_client($address, $errno, $errstr, ...$options);
     }
 
-    function fgets($stream): string|false
+    function fgets($stream, ...$options): string|false
     {
-        return array_shift($GLOBALS['toggly_protocol_test_handshake_lines']) ?: false;
+        if ($stream === ($GLOBALS['toggly_protocol_test_socket'] ?? null)
+            && array_key_exists('toggly_protocol_test_handshake_lines', $GLOBALS)) {
+            return array_shift($GLOBALS['toggly_protocol_test_handshake_lines']) ?? false;
+        }
+
+        return \fgets($stream, ...$options);
     }
 }
 
@@ -21,10 +30,75 @@ use Toggly\FeatureManagement\Http\WebSocketClient;
 
 final class WebSocketClientProtocolResilienceTest extends TestCase
 {
+    private array $testSockets = [];
+
     protected function setUp(): void
     {
-        unset($GLOBALS['toggly_protocol_test_socket']);
-        $GLOBALS['toggly_protocol_test_handshake_lines'] = [];
+        unset($GLOBALS['toggly_protocol_test_socket'], $GLOBALS['toggly_protocol_test_handshake_lines']);
+    }
+
+    protected function tearDown(): void
+    {
+        unset($GLOBALS['toggly_protocol_test_socket'], $GLOBALS['toggly_protocol_test_handshake_lines']);
+        foreach ($this->testSockets as $socket) {
+            if (is_resource($socket)) {
+                fclose($socket);
+            }
+        }
+        $this->testSockets = [];
+        parent::tearDown();
+    }
+
+    public function testNativeConnectionsForwardContextAndErrorReferencesOutsideTheFixture(): void
+    {
+        $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        self::assertIsResource($server);
+        $address = 'tcp://' . stream_socket_get_name($server, false);
+        $client = $peer = null;
+        try {
+            $GLOBALS['toggly_protocol_test_socket'] = $this->socket('');
+            $context = stream_context_create(['socket' => ['bindto' => '127.0.0.1:0']]);
+            $client = \Toggly\FeatureManagement\Http\stream_socket_client(
+                $address, $errno, $errstr, 0.25, STREAM_CLIENT_CONNECT, $context
+            );
+            self::assertIsResource($client);
+            self::assertSame(stream_context_get_options($context), stream_context_get_options($client));
+            $peer = stream_socket_accept($server, 0.25);
+            self::assertIsResource($peer);
+            fwrite($peer, "native connection\n");
+            self::assertSame("native connection\n", \Toggly\FeatureManagement\Http\fgets($client));
+
+            fclose($server);
+            $errno = 0;
+            $errstr = '';
+            self::assertFalse(@\Toggly\FeatureManagement\Http\stream_socket_client(
+                $address, $errno, $errstr, 0.25, STREAM_CLIENT_CONNECT, $context
+            ));
+            self::assertNotSame(0, $errno);
+            self::assertNotSame('', $errstr);
+        } finally {
+            foreach ([$client, $peer, $server] as $stream) {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+        }
+    }
+
+    public function testNativeReadsForwardLengthEvenWhileAnotherSocketHasAFixture(): void
+    {
+        $fixture = $this->socket('');
+        $native = $this->socket("native line\n");
+        $GLOBALS['toggly_protocol_test_socket'] = $fixture;
+        $GLOBALS['toggly_protocol_test_handshake_lines'] = ["fixture line\n"];
+        try {
+            self::assertSame('nat', \Toggly\FeatureManagement\Http\fgets($native, 4));
+            self::assertSame("ive line\n", \Toggly\FeatureManagement\Http\fgets($native));
+            self::assertSame(["fixture line\n"], $GLOBALS['toggly_protocol_test_handshake_lines']);
+        } finally {
+            fclose($fixture);
+            fclose($native);
+        }
     }
 
     public function testTickUnmasksAnUpdateFrameAndDispatchesIt(): void
@@ -198,6 +272,7 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
     private function socket(string $input)
     {
         $socket = fopen('php://temp', 'r+');
+        $this->testSockets[] = $socket;
         fwrite($socket, $input);
         rewind($socket);
         return $socket;

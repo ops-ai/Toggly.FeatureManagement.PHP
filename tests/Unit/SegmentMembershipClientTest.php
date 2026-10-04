@@ -65,6 +65,18 @@ class SegmentMembershipClientTest extends TestCase
         $client->listSegments();
     }
 
+    public function testEmptySuccessBodyReturnsEmptyArray(): void
+    {
+        $client = $this->client(204, '');
+        $this->assertSame([], $client->removeSegmentMembers('Beta Testers', ['a']));
+    }
+
+    public function testWhitespaceOnlySuccessBodyReturnsEmptyArray(): void
+    {
+        $client = $this->client(200, "  \n");
+        $this->assertSame([], $client->replaceSegmentMembers('Beta Testers', ['a']));
+    }
+
     private function client(int $status, string $body): SegmentMembershipClient
     {
         return new SegmentMembershipClient(

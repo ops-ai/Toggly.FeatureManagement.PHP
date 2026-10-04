@@ -65,9 +65,14 @@ class SegmentMembershipClient
                 ->withBody($this->streams->createStream(json_encode($body, JSON_THROW_ON_ERROR)));
         }
         $response = $this->http->sendRequest($request);
+        $status = $response->getStatusCode();
         $payload = (string) $response->getBody();
-        if ($response->getStatusCode() >= 400) {
-            throw new TogglyException('Segment membership ' . $method . ' ' . $path . ' failed: ' . $response->getStatusCode());
+        if ($status >= 400) {
+            throw new TogglyException('Segment membership ' . $method . ' ' . $path . ' failed: ' . $status);
+        }
+        // Successful DELETE/PUT may return 204 No Content or an empty body.
+        if ($status === 204 || trim($payload) === '') {
+            return [];
         }
         try {
             $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);

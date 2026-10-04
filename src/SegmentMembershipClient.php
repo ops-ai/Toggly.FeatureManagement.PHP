@@ -69,7 +69,21 @@ class SegmentMembershipClient
         if ($response->getStatusCode() >= 400) {
             throw new TogglyException('Segment membership ' . $method . ' ' . $path . ' failed: ' . $response->getStatusCode());
         }
-        return json_decode($payload, true) ?? [];
+        try {
+            $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new TogglyException(
+                'Segment membership ' . $method . ' ' . $path . ' returned invalid JSON',
+                0,
+                $e
+            );
+        }
+        if (!is_array($decoded)) {
+            throw new TogglyException(
+                'Segment membership ' . $method . ' ' . $path . ' returned a non-array JSON value'
+            );
+        }
+        return $decoded;
     }
 
     private function itemsPath(string $segment): string

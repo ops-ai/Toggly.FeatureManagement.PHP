@@ -49,6 +49,22 @@ class SegmentMembershipClientTest extends TestCase
         $client->listSegments();
     }
 
+    public function testInvalidJsonBodyThrows(): void
+    {
+        $client = $this->client(200, 'not-json');
+        $this->expectException(TogglyException::class);
+        $this->expectExceptionMessage('invalid JSON');
+        $client->listSegments();
+    }
+
+    public function testNonArrayJsonBodyThrows(): void
+    {
+        $client = $this->client(200, 'null');
+        $this->expectException(TogglyException::class);
+        $this->expectExceptionMessage('non-array');
+        $client->listSegments();
+    }
+
     private function client(int $status, string $body): SegmentMembershipClient
     {
         return new SegmentMembershipClient(

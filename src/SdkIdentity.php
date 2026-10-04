@@ -12,6 +12,7 @@ final class SdkIdentity
 
     private function __construct()
     {
+        // Static helpers only; prevent instantiation.
     }
 
     public static function userAgent(): string

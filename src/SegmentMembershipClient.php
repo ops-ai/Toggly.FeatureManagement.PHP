@@ -13,6 +13,7 @@ use Toggly\FeatureManagement\Exceptions\TogglyException;
 class SegmentMembershipClient
 {
     private const SEGMENTS_PATH = '/api/v2/segments';
+    private const ERROR_PREFIX = 'Segment membership ';
 
     private ClientInterface $http;
     private RequestFactoryInterface $requests;
@@ -68,7 +69,7 @@ class SegmentMembershipClient
         $status = $response->getStatusCode();
         $payload = (string) $response->getBody();
         if ($status >= 400) {
-            throw new TogglyException('Segment membership ' . $method . ' ' . $path . ' failed: ' . $status);
+            throw new TogglyException(self::ERROR_PREFIX . $method . ' ' . $path . ' failed: ' . $status);
         }
         // Successful DELETE/PUT may return 204 No Content or an empty body.
         if ($status === 204 || trim($payload) === '') {
@@ -78,14 +79,14 @@ class SegmentMembershipClient
             $decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new TogglyException(
-                'Segment membership ' . $method . ' ' . $path . ' returned invalid JSON',
+                self::ERROR_PREFIX . $method . ' ' . $path . ' returned invalid JSON',
                 0,
                 $e
             );
         }
         if (!is_array($decoded)) {
             throw new TogglyException(
-                'Segment membership ' . $method . ' ' . $path . ' returned a non-array JSON value'
+                self::ERROR_PREFIX . $method . ' ' . $path . ' returned a non-array JSON value'
             );
         }
         return $decoded;

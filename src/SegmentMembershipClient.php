@@ -59,7 +59,7 @@ class SegmentMembershipClient
         if ($body !== null) {
             $request = $request
                 ->withHeader('Content-Type', 'application/json')
-                ->withBody($this->streams->createStream(json_encode($body)));
+                ->withBody($this->streams->createStream(json_encode($body, JSON_THROW_ON_ERROR)));
         }
         $response = $this->http->sendRequest($request);
         $payload = (string) $response->getBody();

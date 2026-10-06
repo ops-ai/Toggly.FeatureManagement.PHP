@@ -156,38 +156,9 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             $features = $snapshot['features'];
             $startupFromDurable = empty($this->definitions);
 
-            // Verify signature if using signed definitions
-            if ($this->settings->useSignedDefinitions) {
-                if ($snapshot['signature'] === null || $snapshot['keyId'] === null || $snapshot['timestamp'] === null) {
-                    $this->reportError('Snapshot is missing required signature fields');
-                    return;
-                }
-
-                $signedDefsJson = $snapshot['signedDefsJson'] ?? null;
-                if ($signedDefsJson !== null && $signedDefsJson !== '') {
-                    try {
-                        // Verify exact server-signed defs bytes (never re-serialize).
-                        $valid = $this->signatureVerifier->verifySnapshot(
-                            $signedDefsJson,
-                            $snapshot['signature'],
-                            $snapshot['keyId'],
-                            $snapshot['timestamp']
-                        );
-
-                        if (!$valid) {
-                            $this->reportError('Invalid signature in snapshot');
-                            return;
-                        }
-                    } catch (SignatureVerificationException $e) {
-                        $this->reportError('Signature verification failed for snapshot', $e);
-                        return;
-                    }
-                } else {
-                    $legacyMessage =
-                        'Snapshot is missing signedDefsJson; loaded without cryptographic re-verification. Clear and refresh to upgrade the snapshot.';
-                    $this->logger->warning($legacyMessage);
-                    $this->invokeOnError($legacyMessage, null);
-                }
+            // Authenticate before restoring any snapshot state.
+            if ($this->settings->useSignedDefinitions && !$this->acceptSnapshotSignature($snapshot)) {
+                return;
             }
 
             if (!empty($snapshot['etag'])) {
@@ -201,30 +172,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 $this->restoreVariantEntriesFromSnapshot($snapshot['signedDefsJson'] ?? null);
             }
 
-            // Load definitions from snapshot
-            foreach ($features as $featureDefinition) {
-                $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
-
-                // Track secured features
-                if ($featureDefinition->securedFeature) {
-                    $this->secureFeatures[$featureDefinition->featureKey] = true;
-                } else {
-                    unset($this->secureFeatures[$featureDefinition->featureKey]);
-                }
-
-                // Update feature state
-                $isEnabled = $this->isAlwaysOn($featureDefinition);
-                if ($this->featureStateService instanceof FeatureStateService) {
-                    $this->featureStateService->updateFeatureState($featureDefinition->featureKey, $isEnabled);
-                }
-            }
-
-            // Update experiments mapping
-            $this->updateExperimentsMapping($features);
-
-            if ($this->featureStateService instanceof FeatureStateService) {
-                $this->featureStateService->notifyDefinitionsChanged();
-            }
+            $this->restoreSnapshotFeatures($features);
             $this->loaded = true;
 
             // Startup served from durable snapshot before first network — count once.
@@ -233,6 +181,77 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             }
         } catch (\Exception $e) {
             $this->reportError('Error loading from snapshot', $e);
+        }
+    }
+
+    /**
+     * Verify exact signed bytes, or retain the legacy snapshot warning path.
+     */
+    private function acceptSnapshotSignature(array $snapshot): bool
+    {
+        if ($snapshot['signature'] === null || $snapshot['keyId'] === null || $snapshot['timestamp'] === null) {
+            $this->reportError('Snapshot is missing required signature fields');
+            return false;
+        }
+
+        $signedDefsJson = $snapshot['signedDefsJson'] ?? null;
+        if ($signedDefsJson === null || $signedDefsJson === '') {
+            $legacyMessage =
+                'Snapshot is missing signedDefsJson; loaded without cryptographic re-verification. Clear and refresh to upgrade the snapshot.';
+            $this->logger->warning($legacyMessage);
+            $this->invokeOnError($legacyMessage, null);
+            return true;
+        }
+
+        try {
+            // Verify exact server-signed defs bytes (never re-serialize).
+            $valid = $this->signatureVerifier->verifySnapshot(
+                $signedDefsJson,
+                $snapshot['signature'],
+                $snapshot['keyId'],
+                $snapshot['timestamp']
+            );
+
+            if (!$valid) {
+                $this->reportError('Invalid signature in snapshot');
+                return false;
+            }
+        } catch (SignatureVerificationException $e) {
+            $this->reportError('Signature verification failed for snapshot', $e);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Restore definitions and notify observers after snapshot authentication.
+     *
+     * @param FeatureDefinition[] $features
+     */
+    private function restoreSnapshotFeatures(array $features): void
+    {
+        foreach ($features as $featureDefinition) {
+            $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
+
+            // Track secured features
+            if ($featureDefinition->securedFeature) {
+                $this->secureFeatures[$featureDefinition->featureKey] = true;
+            } else {
+                unset($this->secureFeatures[$featureDefinition->featureKey]);
+            }
+
+            // Update feature state
+            $isEnabled = $this->isAlwaysOn($featureDefinition);
+            if ($this->featureStateService instanceof FeatureStateService) {
+                $this->featureStateService->updateFeatureState($featureDefinition->featureKey, $isEnabled);
+            }
+        }
+
+        $this->updateExperimentsMapping($features);
+
+        if ($this->featureStateService instanceof FeatureStateService) {
+            $this->featureStateService->notifyDefinitionsChanged();
         }
     }
 

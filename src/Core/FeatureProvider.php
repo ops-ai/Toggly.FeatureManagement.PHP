@@ -203,6 +203,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             return true;
         }
 
+        $valid = false;
         try {
             // Verify exact server-signed defs bytes (never re-serialize).
             $valid = $this->signatureVerifier->verifySnapshot(
@@ -214,14 +215,12 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
             if (!$valid) {
                 $this->reportError('Invalid signature in snapshot');
-                return false;
             }
         } catch (SignatureVerificationException $e) {
             $this->reportError('Signature verification failed for snapshot', $e);
-            return false;
         }
 
-        return true;
+        return $valid;
     }
 
     /**

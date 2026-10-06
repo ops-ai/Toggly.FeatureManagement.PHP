@@ -8,10 +8,11 @@ namespace Toggly\FeatureManagement;
 final class SdkIdentity
 {
     public const SDK_ID = 'php';
-    public const SDK_VERSION = '1.1.4';
+    public const SDK_VERSION = '1.2.1';
 
     private function __construct()
     {
+        // Static helpers only; prevent instantiation.
     }
 
     public static function userAgent(): string

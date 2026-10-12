@@ -8,6 +8,7 @@ use Toggly\FeatureManagement\Config\TogglySettings;
 use Toggly\FeatureManagement\Contracts\FeatureContextProviderInterface;
 use Toggly\FeatureManagement\Core\UsageStatsProvider;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\Telemetry\FeatureUsageScope;
 use Toggly\FeatureManagement\Telemetry\GrpcClients;
 use Toggly\FeatureManagement\Telemetry\IdentityHasher;
 use Toggly\FeatureManagement\Telemetry\UsageGrpcClient;
@@ -385,5 +386,47 @@ class UsageStatsProviderTest extends TestCase
         $this->assertSame(1, $stats['errorCount']);
         $this->assertGreaterThan(0, $stats['durationSumMs']);
         $this->assertGreaterThan(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testUseScopeCancellationAndNoopSkipDurationMetrics(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $provider->use('Checkout', static function ($scope) {
+            $scope->markCancelled();
+            return 'cancelled';
+        });
+
+        $noop = FeatureUsageScope::noop();
+        $noop->fail();
+        $noop->complete();
+        $noop->complete();
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        // beginUsage still records the attempt; cancel only drops duration/error.
+        $this->assertSame(1, $stats['usedCount']);
+        $this->assertSame(0, $stats['errorCount']);
+        $this->assertSame(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+
+        $provider->use('Checkout', static function () {
+            return 'ok';
+        });
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(2, $stats['usedCount']);
+        $this->assertSame(0, $stats['errorCount']);
+        $this->assertGreaterThan(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
     }
 }

@@ -8,7 +8,7 @@ namespace Toggly\FeatureManagement;
 final class SdkIdentity
 {
     public const SDK_ID = 'php';
-    public const SDK_VERSION = '1.2.1';
+    public const SDK_VERSION = '1.3.0';
 
     private function __construct()
     {

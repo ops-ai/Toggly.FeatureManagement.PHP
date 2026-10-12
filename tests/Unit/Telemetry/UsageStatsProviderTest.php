@@ -516,6 +516,59 @@ class UsageStatsProviderTest extends TestCase
         ]);
         $this->assertNull($provider->peekPayload());
     }
+
+    public function testDurationOnlyOutcomeCreatesVariantAndAppearsInPayload(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        // No prior usedCount — duration path must create the variant bucket.
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'failed' => false,
+            'durationMs' => 15,
+        ], 'treatment');
+
+        $addDuration = new \ReflectionMethod(UsageStatsProvider::class, 'addDurationMs');
+        $addDuration->setAccessible(true);
+        $addDuration->invoke($provider, 'Checkout', 'treatment', 0, false);
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['treatment'];
+        $this->assertSame(0, $stats['usedCount']);
+        $this->assertSame(15, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorCount']);
+    }
+
+    public function testErrorCountAloneIsIncludedInPayload(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'failed' => true,
+            'durationMs' => 0,
+        ], 'treatment');
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['treatment'];
+        $this->assertSame(1, $stats['errorCount']);
+        $this->assertSame(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+    }
 }
 
 final class AbortException extends \Exception

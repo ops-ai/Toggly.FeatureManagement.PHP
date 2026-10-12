@@ -429,4 +429,95 @@ class UsageStatsProviderTest extends TestCase
         $this->assertGreaterThan(0, $stats['durationSumMs']);
         $this->assertSame(0, $stats['errorDurationSumMs']);
     }
+
+    public function testUseScopeThrownExceptionRecordsErrorAndRethrows(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        try {
+            $provider->use('Checkout', static function () {
+                throw new \RuntimeException('boom');
+            }, '');
+            $this->fail('expected RuntimeException');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boom', $e->getMessage());
+        }
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(1, $stats['usedCount']);
+        $this->assertSame(1, $stats['errorCount']);
+        $this->assertGreaterThan(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testUseScopeAbortExceptionCancelsWithoutErrorMetrics(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        try {
+            $provider->use('Checkout', static function () {
+                throw new AbortException('aborted');
+            });
+            $this->fail('expected AbortException');
+        } catch (AbortException $e) {
+            $this->assertSame('aborted', $e->getMessage());
+        }
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(1, $stats['usedCount']);
+        $this->assertSame(0, $stats['errorCount']);
+        $this->assertSame(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testBeginUsageEmptyFeatureKeyReturnsNoop(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $scope = $provider->beginUsage('');
+        $scope->fail();
+        $scope->complete();
+        $this->assertNull($provider->peekPayload());
+
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'cancelled' => true,
+            'durationMs' => 10,
+            'failed' => true,
+        ], '');
+        $this->assertNull($provider->peekPayload());
+
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'failed' => false,
+            'durationMs' => 0,
+        ]);
+        $this->assertNull($provider->peekPayload());
+    }
+}
+
+final class AbortException extends \Exception
+{
 }

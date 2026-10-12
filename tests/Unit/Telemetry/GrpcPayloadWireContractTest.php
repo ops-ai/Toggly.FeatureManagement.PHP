@@ -94,7 +94,15 @@ final class GrpcPayloadWireContractTest extends TestCase
                     'uniqueUserHashes' => ['303', 404],
                     'uniqueViewedUserHashes' => ['505'],
                     'variantStats' => [
-                        'control' => ['checkCount' => '9', 'requestCount' => 8, 'usedCount' => '7', 'viewedCount' => 6],
+                        'control' => [
+                            'checkCount' => '9',
+                            'requestCount' => 8,
+                            'usedCount' => '7',
+                            'viewedCount' => 6,
+                            'errorCount' => '2',
+                            'durationSumMs' => '150',
+                            'errorDurationSumMs' => 40,
+                        ],
                         'discarded' => 'not-a-stat',
                     ],
                 ],
@@ -136,6 +144,9 @@ final class GrpcPayloadWireContractTest extends TestCase
         $this->assertSame(8, $control->getRequestCount());
         $this->assertSame(7, $control->getUsedCount());
         $this->assertSame(6, $control->getViewedCount());
+        $this->assertSame(2, $control->getErrorCount());
+        $this->assertSame(150, $control->getDurationSumMs());
+        $this->assertSame(40, $control->getErrorDurationSumMs());
     }
 
     private function unknownVarintField(): string

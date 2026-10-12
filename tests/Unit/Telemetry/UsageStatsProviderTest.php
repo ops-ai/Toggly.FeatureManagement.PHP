@@ -351,4 +351,39 @@ class UsageStatsProviderTest extends TestCase
         $this->assertNull($provider->peekPayload());
         $this->assertSame(2, $attempts);
     }
+
+    public function testUseScopeRecordsSuccessAndFailureMetrics(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $provider->use('Checkout', static function ($scope) {
+            return 'ok';
+        });
+
+        $failed = false;
+        try {
+            $provider->use('Checkout', static function ($scope) {
+                $scope->fail();
+                return 'soft-fail';
+            });
+        } catch (\Throwable $e) {
+            $failed = true;
+        }
+        $this->assertFalse($failed);
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(2, $stats['usedCount']);
+        $this->assertSame(1, $stats['errorCount']);
+        $this->assertGreaterThan(0, $stats['durationSumMs']);
+        $this->assertGreaterThan(0, $stats['errorDurationSumMs']);
+    }
 }

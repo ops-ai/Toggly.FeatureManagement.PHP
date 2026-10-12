@@ -634,4 +634,16 @@ class FeatureManager
     {
         return $this->featureProvider->getVariantValue($featureKey);
     }
+
+    /**
+     * Run an action inside a usage scope (attempt, duration, errors).
+     *
+     * @template T
+     * @param callable(\Toggly\FeatureManagement\Telemetry\FeatureUsageScope): T $action
+     * @return T
+     */
+    public function use(string $featureKey, callable $action, string $variant = 'enabled')
+    {
+        return $this->usageStatsProvider->use($featureKey, $action, $variant);
+    }
 }

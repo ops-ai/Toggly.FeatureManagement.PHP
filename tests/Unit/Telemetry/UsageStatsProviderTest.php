@@ -365,12 +365,14 @@ class UsageStatsProviderTest extends TestCase
         );
 
         $provider->use('Checkout', static function ($scope) {
+            usleep(2000);
             return 'ok';
         });
 
         $failed = false;
         try {
             $provider->use('Checkout', static function ($scope) {
+                usleep(2000);
                 $scope->fail();
                 return 'soft-fail';
             });
@@ -419,6 +421,7 @@ class UsageStatsProviderTest extends TestCase
         $this->assertSame(0, $stats['errorDurationSumMs']);
 
         $provider->use('Checkout', static function () {
+            usleep(2000);
             return 'ok';
         });
         $peek = $provider->peekPayload();
@@ -443,6 +446,7 @@ class UsageStatsProviderTest extends TestCase
 
         try {
             $provider->use('Checkout', static function () {
+                usleep(2000);
                 throw new \RuntimeException('boom');
             }, '');
             $this->fail('expected RuntimeException');

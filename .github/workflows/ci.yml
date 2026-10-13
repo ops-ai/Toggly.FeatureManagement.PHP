@@ -346,7 +346,6 @@ jobs:
 
       - name: Report SonarQube Server quality gate
         if: ${{ failure() && steps.sonar-eligibility.outputs.scan == 'true' }}
-        continue-on-error: true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_SERVER_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -399,6 +398,8 @@ jobs:
           except Exception: print(raw[:300]); raise SystemExit(0)
           print("total", d.get("total"));
           [print(i.get("rule"), i.get("severity"), i.get("component","").split(":")[-1], i.get("line"), (i.get("message") or "")[:120]) for i in d.get("issues",[])]' || true
+          # Reporting must not mask the failed scan step.
+          exit 0
 
   dependency-check:
     name: OWASP Dependency Check

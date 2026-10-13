@@ -179,11 +179,11 @@ class UsageStatsProvider implements UsageStatsProviderInterface
      */
     public function recordUsageScopeOutcome(string $featureKey, array $outcome, string $variant = 'enabled'): void
     {
-        if (!empty($outcome['cancelled'])) {
+        if (($outcome['cancelled'] ?? false) === true) {
             return;
         }
         $variant = $variant !== '' ? $variant : 'enabled';
-        if (!empty($outcome['failed'])) {
+        if (($outcome['failed'] ?? false) === true) {
             $this->bumpVariant($featureKey, $variant, 'errorCount');
             if (isset($outcome['durationMs']) && (int) $outcome['durationMs'] > 0) {
                 $this->addDurationMs($featureKey, $variant, (int) $outcome['durationMs'], true);

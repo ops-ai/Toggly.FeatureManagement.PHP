@@ -197,6 +197,19 @@ jobs:
           tools: composer:v2, wp-cli
           extensions: mbstring, xml, ctype, json, openssl, curl, mysqli
 
+      - name: Ensure wp-cli is on PATH
+        run: |
+          set -euo pipefail
+          if command -v wp >/dev/null 2>&1; then
+            wp --info
+            exit 0
+          fi
+          echo "setup-php did not install wp-cli; installing phar fallback"
+          curl -fsSL -o "$RUNNER_TEMP/wp-cli.phar" https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          chmod +x "$RUNNER_TEMP/wp-cli.phar"
+          sudo mv "$RUNNER_TEMP/wp-cli.phar" /usr/local/bin/wp
+          wp --info
+
       - name: Build candidate Composer archives
         run: |
           set -euo pipefail
@@ -319,7 +332,7 @@ jobs:
             -Dsonar.projectName="Toggly SDKs - PHP"
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
-            -Dsonar.exclusions=**/vendor/**
+            -Dsonar.exclusions=**/vendor/**,**/Telemetry/Pb/**,**/GPBMetadata/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
             -Dsonar.qualitygate.wait=true
@@ -338,7 +351,7 @@ jobs:
             -Dsonar.projectName="Toggly SDKs - PHP"
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
-            -Dsonar.exclusions=**/vendor/**
+            -Dsonar.exclusions=**/vendor/**,**/Telemetry/Pb/**,**/GPBMetadata/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
             -Dsonar.qualitygate.wait=true
@@ -365,8 +378,7 @@ jobs:
           if ! curl -sS -H "Accept: application/json" -H "Authorization: Bearer ${SONAR_TOKEN}" "$status_url" -o /tmp/sonar-qg.json -w "%{http_code}" | tee /tmp/sonar-qg.http | grep -q '^200$'; then
             curl -sS -H "Accept: application/json" -u "${SONAR_TOKEN}:" "$status_url" -o /tmp/sonar-qg.json || true
           fi
-          head -c 200 /tmp/sonar-qg.json; echo
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
           import json
           from pathlib import Path
           raw = Path("/tmp/sonar-qg.json").read_text()
@@ -374,22 +386,25 @@ jobs:
               data = json.loads(raw)
           except json.JSONDecodeError:
               print("Could not parse quality-gate API response (non-JSON).")
-              print("")
-              print("```")
               print(raw[:500])
-              print("```")
               raise SystemExit(0)
           status = data.get("projectStatus", {})
-          print(f"**Status:** `{status.get('status')}`")
-          print("")
-          print("| Metric | Status | Actual | Threshold |")
-          print("|---|---|---|---|")
+          lines = [
+              f"**Status:** `{status.get('status')}`",
+              "",
+              "| Metric | Status | Actual | Threshold |",
+              "|---|---|---|---|",
+          ]
           for condition in status.get("conditions", []):
-              print(
-                  f"| `{condition.get('metricKey')}` | {condition.get('status')} | "
-                  f"{condition.get('actualValue')} | {condition.get('errorThreshold')} |"
-              )
+              metric = condition.get("metricKey")
+              cond_status = condition.get("status")
+              actual = condition.get("actualValue")
+              threshold = condition.get("errorThreshold")
+              lines.append(f"| `{metric}` | {cond_status} | {actual} | {threshold} |")
+              print(f"QG {metric} {cond_status} actual={actual} threshold={threshold}", flush=True)
+          Path("/tmp/sonar-qg-summary.md").write_text("\n".join(lines) + "\n")
           PY
+          cat /tmp/sonar-qg-summary.md >> "$GITHUB_STEP_SUMMARY"
           echo
           echo "Open issues:"
           curl -sS -H "Accept: application/json" -H "Authorization: Bearer ${SONAR_TOKEN}" "$issues_url" \

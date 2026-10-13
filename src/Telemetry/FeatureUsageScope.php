@@ -13,8 +13,7 @@ final class FeatureUsageScope
     private ?UsageStatsProvider $provider;
     private string $featureKey;
     private string $variant;
-    /** @var float */
-    private $startMicrotime;
+    private float $startMicrotime;
     private bool $failed = false;
     private bool $cancelled = false;
     private bool $completed = false;

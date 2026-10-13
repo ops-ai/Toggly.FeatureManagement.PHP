@@ -346,26 +346,40 @@ jobs:
 
       - name: Report SonarQube Server quality gate
         if: ${{ failure() && steps.sonar-eligibility.outputs.scan == 'true' }}
+        continue-on-error: true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_SERVER_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
           pr="${{ github.event.pull_request.number }}"
+          host="${SONAR_HOST_URL%/}"
           echo "## SonarQube Server quality gate (toggly-sdks-php)" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$pr" ]; then
-            status_url="${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=toggly-sdks-php&pullRequest=${pr}"
-            issues_url="${SONAR_HOST_URL}/api/issues/search?componentKeys=toggly-sdks-php&pullRequest=${pr}&resolved=false&ps=20&s=SEVERITY&asc=false"
+            status_url="${host}/api/qualitygates/project_status?projectKey=toggly-sdks-php&pullRequest=${pr}"
+            issues_url="${host}/api/issues/search?componentKeys=toggly-sdks-php&pullRequest=${pr}&resolved=false&ps=20&s=SEVERITY&asc=false"
           else
-            status_url="${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=toggly-sdks-php&branch=${GITHUB_REF_NAME}"
-            issues_url="${SONAR_HOST_URL}/api/issues/search?componentKeys=toggly-sdks-php&branch=${GITHUB_REF_NAME}&resolved=false&ps=20&s=SEVERITY&asc=false"
+            status_url="${host}/api/qualitygates/project_status?projectKey=toggly-sdks-php&branch=${GITHUB_REF_NAME}"
+            issues_url="${host}/api/issues/search?componentKeys=toggly-sdks-php&branch=${GITHUB_REF_NAME}&resolved=false&ps=20&s=SEVERITY&asc=false"
           fi
           echo "GET ${status_url}"
-          curl -sS -u "${SONAR_TOKEN}:" "$status_url" | tee /tmp/sonar-qg.json
-          echo
+          # Community Build may reject -u basic auth for web APIs; try Bearer first.
+          if ! curl -sS -H "Accept: application/json" -H "Authorization: Bearer ${SONAR_TOKEN}" "$status_url" -o /tmp/sonar-qg.json -w "%{http_code}" | tee /tmp/sonar-qg.http | grep -q '^200$'; then
+            curl -sS -H "Accept: application/json" -u "${SONAR_TOKEN}:" "$status_url" -o /tmp/sonar-qg.json || true
+          fi
+          head -c 200 /tmp/sonar-qg.json; echo
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
-          data = json.loads(Path("/tmp/sonar-qg.json").read_text())
+          raw = Path("/tmp/sonar-qg.json").read_text()
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError:
+              print("Could not parse quality-gate API response (non-JSON).")
+              print("")
+              print("```")
+              print(raw[:500])
+              print("```")
+              raise SystemExit(0)
           status = data.get("projectStatus", {})
           print(f"**Status:** `{status.get('status')}`")
           print("")
@@ -379,8 +393,12 @@ jobs:
           PY
           echo
           echo "Open issues:"
-          curl -sS -u "${SONAR_TOKEN}:" "$issues_url" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("total", d.get("total"));
-          [print(i.get("rule"), i.get("severity"), i.get("component","").split(":")[-1], i.get("line"), (i.get("message") or "")[:120]) for i in d.get("issues",[])]'
+          curl -sS -H "Accept: application/json" -H "Authorization: Bearer ${SONAR_TOKEN}" "$issues_url" \
+            | python3 -c 'import json,sys; raw=sys.stdin.read();
+          try: d=json.loads(raw)
+          except Exception: print(raw[:300]); raise SystemExit(0)
+          print("total", d.get("total"));
+          [print(i.get("rule"), i.get("severity"), i.get("component","").split(":")[-1], i.get("line"), (i.get("message") or "")[:120]) for i in d.get("issues",[])]' || true
 
   dependency-check:
     name: OWASP Dependency Check

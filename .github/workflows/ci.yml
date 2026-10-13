@@ -197,6 +197,19 @@ jobs:
           tools: composer:v2, wp-cli
           extensions: mbstring, xml, ctype, json, openssl, curl, mysqli
 
+      - name: Ensure wp-cli is on PATH
+        run: |
+          set -euo pipefail
+          if command -v wp >/dev/null 2>&1; then
+            wp --info
+            exit 0
+          fi
+          echo "setup-php did not install wp-cli; installing phar fallback"
+          curl -fsSL -o "$RUNNER_TEMP/wp-cli.phar" https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          chmod +x "$RUNNER_TEMP/wp-cli.phar"
+          sudo mv "$RUNNER_TEMP/wp-cli.phar" /usr/local/bin/wp
+          wp --info
+
       - name: Build candidate Composer archives
         run: |
           set -euo pipefail
@@ -319,7 +332,7 @@ jobs:
             -Dsonar.projectName="Toggly SDKs - PHP"
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
-            -Dsonar.exclusions=**/vendor/**
+            -Dsonar.exclusions=**/vendor/**,**/Telemetry/Pb/**,**/GPBMetadata/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
             -Dsonar.qualitygate.wait=true
@@ -327,6 +340,7 @@ jobs:
 
       - name: SonarQube Server Scan and Quality Gate
         if: steps.sonar-eligibility.outputs.scan == 'true'
+        id: sonarqube-server
         uses: SonarSource/sonarqube-scan-action@v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_SERVER_TOKEN }}
@@ -337,11 +351,70 @@ jobs:
             -Dsonar.projectName="Toggly SDKs - PHP"
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
-            -Dsonar.exclusions=**/vendor/**
+            -Dsonar.exclusions=**/vendor/**,**/Telemetry/Pb/**,**/GPBMetadata/**
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
             -Dsonar.qualitygate.wait=true
             -Dsonar.qualitygate.timeout=300
+
+      - name: Report SonarQube Server quality gate
+        if: ${{ failure() && steps.sonar-eligibility.outputs.scan == 'true' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_SERVER_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          pr="${{ github.event.pull_request.number }}"
+          host="${SONAR_HOST_URL%/}"
+          echo "## SonarQube Server quality gate (toggly-sdks-php)" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$pr" ]; then
+            status_url="${host}/api/qualitygates/project_status?projectKey=toggly-sdks-php&pullRequest=${pr}"
+            issues_url="${host}/api/issues/search?componentKeys=toggly-sdks-php&pullRequest=${pr}&resolved=false&ps=20&s=SEVERITY&asc=false"
+          else
+            status_url="${host}/api/qualitygates/project_status?projectKey=toggly-sdks-php&branch=${GITHUB_REF_NAME}"
+            issues_url="${host}/api/issues/search?componentKeys=toggly-sdks-php&branch=${GITHUB_REF_NAME}&resolved=false&ps=20&s=SEVERITY&asc=false"
+          fi
+          echo "GET ${status_url}"
+          # Community Build may reject -u basic auth for web APIs; try Bearer first.
+          if ! curl -sS -H "Accept: application/json" -H "Authorization: Bearer ${SONAR_TOKEN}" "$status_url" -o /tmp/sonar-qg.json -w "%{http_code}" | tee /tmp/sonar-qg.http | grep -q '^200$'; then
+            curl -sS -H "Accept: application/json" -u "${SONAR_TOKEN}:" "$status_url" -o /tmp/sonar-qg.json || true
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          raw = Path("/tmp/sonar-qg.json").read_text()
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError:
+              print("Could not parse quality-gate API response (non-JSON).")
+              print(raw[:500])
+              raise SystemExit(0)
+          status = data.get("projectStatus", {})
+          lines = [
+              f"**Status:** `{status.get('status')}`",
+              "",
+              "| Metric | Status | Actual | Threshold |",
+              "|---|---|---|---|",
+          ]
+          for condition in status.get("conditions", []):
+              metric = condition.get("metricKey")
+              cond_status = condition.get("status")
+              actual = condition.get("actualValue")
+              threshold = condition.get("errorThreshold")
+              lines.append(f"| `{metric}` | {cond_status} | {actual} | {threshold} |")
+              print(f"QG {metric} {cond_status} actual={actual} threshold={threshold}", flush=True)
+          Path("/tmp/sonar-qg-summary.md").write_text("\n".join(lines) + "\n")
+          PY
+          cat /tmp/sonar-qg-summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo
+          echo "Open issues:"
+          curl -sS -H "Accept: application/json" -H "Authorization: Bearer ${SONAR_TOKEN}" "$issues_url" \
+            | python3 -c 'import json,sys; raw=sys.stdin.read();
+          try: d=json.loads(raw)
+          except Exception: print(raw[:300]); raise SystemExit(0)
+          print("total", d.get("total"));
+          [print(i.get("rule"), i.get("severity"), i.get("component","").split(":")[-1], i.get("line"), (i.get("message") or "")[:120]) for i in d.get("issues",[])]' || true
+          # Reporting must not mask the failed scan step.
+          exit 0
 
   dependency-check:
     name: OWASP Dependency Check

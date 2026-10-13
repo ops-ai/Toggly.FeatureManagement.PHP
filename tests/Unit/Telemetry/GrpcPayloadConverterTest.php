@@ -46,12 +46,18 @@ class GrpcPayloadConverterTest extends TestCase
                             'requestCount' => 1,
                             'usedCount' => 1,
                             'viewedCount' => 1,
+                            'errorCount' => 1,
+                            'durationSumMs' => 25,
+                            'errorDurationSumMs' => 12,
                         ],
                         'disabled' => [
                             'checkCount' => 1,
                             'requestCount' => 0,
                             'usedCount' => 0,
                             'viewedCount' => 0,
+                            'errorCount' => 0,
+                            'durationSumMs' => 0,
+                            'errorDurationSumMs' => 0,
                         ],
                     ],
                 ],
@@ -76,6 +82,9 @@ class GrpcPayloadConverterTest extends TestCase
         $enabled = $stat->getVariantStats()['enabled'];
         $this->assertSame(2, $enabled->getCheckCount());
         $this->assertSame(1, $enabled->getViewedCount());
+        $this->assertSame(1, $enabled->getErrorCount());
+        $this->assertSame(25, $enabled->getDurationSumMs());
+        $this->assertSame(12, $enabled->getErrorDurationSumMs());
         $this->assertContains(IdentityHasher::hashIdentity('user-1'), iterator_to_array($stat->getUniqueViewedUserHashes()));
 
         $bytes = $msg->serializeToString();

@@ -38,6 +38,24 @@ class VariantStats extends \Google\Protobuf\Internal\Message
      * Generated from protobuf field <code>int32 viewedCount = 4;</code>
      */
     protected $viewedCount = 0;
+    /**
+     * Failed usage scopes for this variant
+     *
+     * Generated from protobuf field <code>int32 errorCount = 5;</code>
+     */
+    protected $errorCount = 0;
+    /**
+     * Sum of successful usage-scope durations (ms)
+     *
+     * Generated from protobuf field <code>int64 durationSumMs = 6;</code>
+     */
+    protected $durationSumMs = 0;
+    /**
+     * Sum of failed usage-scope durations (ms)
+     *
+     * Generated from protobuf field <code>int64 errorDurationSumMs = 7;</code>
+     */
+    protected $errorDurationSumMs = 0;
 
     /**
      * Constructor.
@@ -53,6 +71,12 @@ class VariantStats extends \Google\Protobuf\Internal\Message
      *           Number of times this variant was used
      *     @type int $viewedCount
      *           NEW: Number of times this variant was viewed
+     *     @type int $errorCount
+     *           Failed usage scopes for this variant
+     *     @type int|string $durationSumMs
+     *           Sum of successful usage-scope durations (ms)
+     *     @type int|string $errorDurationSumMs
+     *           Sum of failed usage-scope durations (ms)
      * }
      */
     public function __construct($data = NULL) {
@@ -160,6 +184,84 @@ class VariantStats extends \Google\Protobuf\Internal\Message
     {
         GPBUtil::checkInt32($var);
         $this->viewedCount = $var;
+
+        return $this;
+    }
+
+    /**
+     * Failed usage scopes for this variant
+     *
+     * Generated from protobuf field <code>int32 errorCount = 5;</code>
+     * @return int
+     */
+    public function getErrorCount()
+    {
+        return $this->errorCount;
+    }
+
+    /**
+     * Failed usage scopes for this variant
+     *
+     * Generated from protobuf field <code>int32 errorCount = 5;</code>
+     * @param int $var
+     * @return $this
+     */
+    public function setErrorCount($var)
+    {
+        GPBUtil::checkInt32($var);
+        $this->errorCount = $var;
+
+        return $this;
+    }
+
+    /**
+     * Sum of successful usage-scope durations (ms)
+     *
+     * Generated from protobuf field <code>int64 durationSumMs = 6;</code>
+     * @return int|string
+     */
+    public function getDurationSumMs()
+    {
+        return $this->durationSumMs;
+    }
+
+    /**
+     * Sum of successful usage-scope durations (ms)
+     *
+     * Generated from protobuf field <code>int64 durationSumMs = 6;</code>
+     * @param int|string $var
+     * @return $this
+     */
+    public function setDurationSumMs($var)
+    {
+        GPBUtil::checkInt64($var);
+        $this->durationSumMs = $var;
+
+        return $this;
+    }
+
+    /**
+     * Sum of failed usage-scope durations (ms)
+     *
+     * Generated from protobuf field <code>int64 errorDurationSumMs = 7;</code>
+     * @return int|string
+     */
+    public function getErrorDurationSumMs()
+    {
+        return $this->errorDurationSumMs;
+    }
+
+    /**
+     * Sum of failed usage-scope durations (ms)
+     *
+     * Generated from protobuf field <code>int64 errorDurationSumMs = 7;</code>
+     * @param int|string $var
+     * @return $this
+     */
+    public function setErrorDurationSumMs($var)
+    {
+        GPBUtil::checkInt64($var);
+        $this->errorDurationSumMs = $var;
 
         return $this;
     }

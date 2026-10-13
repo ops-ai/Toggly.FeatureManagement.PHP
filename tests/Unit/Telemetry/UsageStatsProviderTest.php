@@ -8,6 +8,7 @@ use Toggly\FeatureManagement\Config\TogglySettings;
 use Toggly\FeatureManagement\Contracts\FeatureContextProviderInterface;
 use Toggly\FeatureManagement\Core\UsageStatsProvider;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
+use Toggly\FeatureManagement\Telemetry\FeatureUsageScope;
 use Toggly\FeatureManagement\Telemetry\GrpcClients;
 use Toggly\FeatureManagement\Telemetry\IdentityHasher;
 use Toggly\FeatureManagement\Telemetry\UsageGrpcClient;
@@ -351,4 +352,229 @@ class UsageStatsProviderTest extends TestCase
         $this->assertNull($provider->peekPayload());
         $this->assertSame(2, $attempts);
     }
+
+    public function testUseScopeRecordsSuccessAndFailureMetrics(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $provider->use('Checkout', static function ($scope) {
+            usleep(2000);
+            return 'ok';
+        });
+
+        $failed = false;
+        try {
+            $provider->use('Checkout', static function ($scope) {
+                usleep(2000);
+                $scope->fail();
+                return 'soft-fail';
+            });
+        } catch (\Throwable $e) {
+            $failed = true;
+        }
+        $this->assertFalse($failed);
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(2, $stats['usedCount']);
+        $this->assertSame(1, $stats['errorCount']);
+        $this->assertGreaterThan(0, $stats['durationSumMs']);
+        $this->assertGreaterThan(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testUseScopeCancellationAndNoopSkipDurationMetrics(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $provider->use('Checkout', static function ($scope) {
+            $scope->markCancelled();
+            return 'cancelled';
+        });
+
+        $noop = FeatureUsageScope::noop();
+        $noop->fail();
+        $noop->complete();
+        $noop->complete();
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        // beginUsage still records the attempt; cancel only drops duration/error.
+        $this->assertSame(1, $stats['usedCount']);
+        $this->assertSame(0, $stats['errorCount']);
+        $this->assertSame(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+
+        $provider->use('Checkout', static function () {
+            usleep(2000);
+            return 'ok';
+        });
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(2, $stats['usedCount']);
+        $this->assertSame(0, $stats['errorCount']);
+        $this->assertGreaterThan(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testUseScopeThrownExceptionRecordsErrorAndRethrows(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        try {
+            $provider->use('Checkout', static function () {
+                usleep(2000);
+                throw new \RuntimeException('boom');
+            }, '');
+            $this->fail('expected RuntimeException');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('boom', $e->getMessage());
+        }
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(1, $stats['usedCount']);
+        $this->assertSame(1, $stats['errorCount']);
+        $this->assertGreaterThan(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testUseScopeAbortExceptionCancelsWithoutErrorMetrics(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        try {
+            $provider->use('Checkout', static function () {
+                throw new AbortException('aborted');
+            });
+            $this->fail('expected AbortException');
+        } catch (AbortException $e) {
+            $this->assertSame('aborted', $e->getMessage());
+        }
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['enabled'];
+        $this->assertSame(1, $stats['usedCount']);
+        $this->assertSame(0, $stats['errorCount']);
+        $this->assertSame(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+    }
+
+    public function testBeginUsageEmptyFeatureKeyReturnsNoop(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $scope = $provider->beginUsage('');
+        $scope->fail();
+        $scope->complete();
+        $this->assertNull($provider->peekPayload());
+
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'cancelled' => true,
+            'durationMs' => 10,
+            'failed' => true,
+        ], '');
+        $this->assertNull($provider->peekPayload());
+
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'failed' => false,
+            'durationMs' => 0,
+        ]);
+        $this->assertNull($provider->peekPayload());
+    }
+
+    public function testDurationOnlyOutcomeCreatesVariantAndAppearsInPayload(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        // No prior usedCount — duration path must create the variant bucket.
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'failed' => false,
+            'durationMs' => 15,
+        ], 'treatment');
+
+        $addDuration = new \ReflectionMethod(UsageStatsProvider::class, 'addDurationMs');
+        $addDuration->setAccessible(true);
+        $addDuration->invoke($provider, 'Checkout', 'treatment', 0, false);
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['treatment'];
+        $this->assertSame(0, $stats['usedCount']);
+        $this->assertSame(15, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorCount']);
+    }
+
+    public function testErrorCountAloneIsIncludedInPayload(): void
+    {
+        $http = $this->createMock(TogglyHttpClient::class);
+        $provider = new UsageStatsProvider(
+            new TogglySettings(['app_key' => 'app', 'environment' => 'Production']),
+            $http,
+            null,
+            new NullLogger(),
+            null
+        );
+
+        $provider->recordUsageScopeOutcome('Checkout', [
+            'failed' => true,
+            'durationMs' => 0,
+        ], 'treatment');
+
+        $peek = $provider->peekPayload();
+        $this->assertNotNull($peek);
+        $stats = $peek['stats'][0]['variantStats']['treatment'];
+        $this->assertSame(1, $stats['errorCount']);
+        $this->assertSame(0, $stats['durationSumMs']);
+        $this->assertSame(0, $stats['errorDurationSumMs']);
+    }
+}
+
+final class AbortException extends \Exception
+{
 }

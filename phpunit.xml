@@ -6,11 +6,10 @@
          executionOrder="depends,defects"
          colors="true">
     <testsuites>
+        <!-- Single suite: a nested Unit suite under tests/ would re-run Unit
+             tests and break Sonar PHPUnit report import (duplicate measures). -->
         <testsuite name="default">
             <directory>tests</directory>
-        </testsuite>
-        <testsuite name="Unit">
-            <directory>tests/Unit</directory>
         </testsuite>
     </testsuites>
     <coverage>

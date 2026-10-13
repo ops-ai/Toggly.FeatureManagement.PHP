@@ -567,37 +567,7 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             if (!is_array($stat)) {
                 continue;
             }
-            $feature = (string) ($stat['feature'] ?? '');
-            if ($feature === '') {
-                continue;
-            }
-            foreach ($stat['variantStats'] ?? [] as $name => $vs) {
-                if (!is_array($vs)) {
-                    continue;
-                }
-                if (!isset($this->variantStats[$feature][$name])) {
-                    $this->variantStats[$feature][$name] = $this->emptyVariantStats();
-                }
-                foreach (
-                    [
-                        'checkCount',
-                        'requestCount',
-                        'usedCount',
-                        'viewedCount',
-                        'errorCount',
-                        'durationSumMs',
-                        'errorDurationSumMs',
-                    ] as $field
-                ) {
-                    $this->variantStats[$feature][$name][$field] += (int) ($vs[$field] ?? 0);
-                }
-            }
-            foreach ($stat['uniqueUserHashes'] ?? [] as $hash) {
-                $this->uniqueUserHashes[$feature][(int) $hash] = true;
-            }
-            foreach ($stat['uniqueViewedUserHashes'] ?? [] as $hash) {
-                $this->uniqueViewedUserHashes[$feature][(int) $hash] = true;
-            }
+            $this->restoreStatFromPayload($stat);
         }
         foreach ($payload['uniqueUserHashes'] ?? [] as $hash) {
             $this->applicationUniqueUserHashes[(int) $hash] = true;
@@ -607,6 +577,52 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         }
         if (isset($payload['definitionCacheMisses'])) {
             $this->definitionCacheMisses += (int) $payload['definitionCacheMisses'];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $stat
+     */
+    private function restoreStatFromPayload(array $stat): void
+    {
+        $feature = (string) ($stat['feature'] ?? '');
+        if ($feature === '') {
+            return;
+        }
+        $this->restoreVariantStatsFromPayload($feature, $stat['variantStats'] ?? []);
+        foreach ($stat['uniqueUserHashes'] ?? [] as $hash) {
+            $this->uniqueUserHashes[$feature][(int) $hash] = true;
+        }
+        foreach ($stat['uniqueViewedUserHashes'] ?? [] as $hash) {
+            $this->uniqueViewedUserHashes[$feature][(int) $hash] = true;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $variantStats
+     */
+    private function restoreVariantStatsFromPayload(string $feature, array $variantStats): void
+    {
+        foreach ($variantStats as $name => $vs) {
+            if (!is_array($vs)) {
+                continue;
+            }
+            if (!isset($this->variantStats[$feature][$name])) {
+                $this->variantStats[$feature][$name] = $this->emptyVariantStats();
+            }
+            foreach (
+                [
+                    'checkCount',
+                    'requestCount',
+                    'usedCount',
+                    'viewedCount',
+                    'errorCount',
+                    'durationSumMs',
+                    'errorDurationSumMs',
+                ] as $field
+            ) {
+                $this->variantStats[$feature][$name][$field] += (int) ($vs[$field] ?? 0);
+            }
         }
     }
 

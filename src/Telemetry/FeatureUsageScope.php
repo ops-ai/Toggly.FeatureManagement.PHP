@@ -51,11 +51,12 @@ final class FeatureUsageScope
         if ($this->cancelled || $this->provider === null || $this->featureKey === '') {
             return;
         }
-        // Clamp to at least 1ms so successful scopes always contribute duration.
-        $durationMs = (int) max(1, round((microtime(true) - $this->startMicrotime) * 1000));
-        $this->provider->recordUsageScopeOutcome($this->featureKey, [
-            'failed' => $this->failed,
-            'durationMs' => $durationMs,
-        ], $this->variant);
+        // Whole milliseconds; sub-ms scopes contribute 0 (matches other SDKs).
+        $durationMs = (int) max(0, round((microtime(true) - $this->startMicrotime) * 1000));
+        $outcome = ['failed' => $this->failed];
+        if ($durationMs > 0) {
+            $outcome['durationMs'] = $durationMs;
+        }
+        $this->provider->recordUsageScopeOutcome($this->featureKey, $outcome, $this->variant);
     }
 }

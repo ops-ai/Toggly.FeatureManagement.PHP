@@ -7,6 +7,7 @@ use Toggly\FeatureManagement\Contracts\FeatureContextProviderInterface;
 use Toggly\FeatureManagement\Contracts\UsageStatsProviderInterface;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
 use Toggly\FeatureManagement\SdkIdentity;
+use Toggly\FeatureManagement\Telemetry\FeatureUsageScope;
 use Toggly\FeatureManagement\Telemetry\GrpcClients;
 use Toggly\FeatureManagement\Telemetry\IdentityHasher;
 use Toggly\FeatureManagement\Telemetry\UsageGrpcClient;
@@ -35,7 +36,7 @@ class UsageStatsProvider implements UsageStatsProviderInterface
     private const MAX_UNIQUE_USER_HASHES_PER_FEATURE = 10000;
     private const MAX_APPLICATION_UNIQUE_USER_HASHES = 10000;
 
-    /** @var array<string, array<string, array{checkCount: int, requestCount: int, usedCount: int, viewedCount: int}>> */
+    /** @var array<string, array<string, array{checkCount: int, requestCount: int, usedCount: int, viewedCount: int, errorCount: int, durationSumMs: int, errorDurationSumMs: int}>> */
     private array $variantStats = [];
 
     /** @var array<string, array<int, true>> */
@@ -158,9 +159,9 @@ class UsageStatsProvider implements UsageStatsProviderInterface
     /**
      * @inheritDoc
      */
-    public function recordUsage(string $featureKey): void
+    public function recordUsage(string $featureKey, string $variant = 'enabled'): void
     {
-        $this->bumpVariant($featureKey, 'enabled', 'usedCount');
+        $this->bumpVariant($featureKey, $variant !== '' ? $variant : 'enabled', 'usedCount');
 
         if ($this->contextProvider !== null) {
             $identifier = $this->contextProvider->getContextIdentifier();
@@ -170,6 +171,58 @@ class UsageStatsProvider implements UsageStatsProviderInterface
                 $this->recordUniqueUserId($featureKey, $identifier);
                 $this->recordApplicationUniqueUserId($identifier);
             }
+        }
+    }
+
+    /**
+     * @param array{failed?: bool, cancelled?: bool, durationMs?: int} $outcome
+     */
+    public function recordUsageScopeOutcome(string $featureKey, array $outcome, string $variant = 'enabled'): void
+    {
+        if (($outcome['cancelled'] ?? false) === true) {
+            return;
+        }
+        $variant = $variant !== '' ? $variant : 'enabled';
+        if (($outcome['failed'] ?? false) === true) {
+            $this->bumpVariant($featureKey, $variant, 'errorCount');
+            if (isset($outcome['durationMs']) && (int) $outcome['durationMs'] > 0) {
+                $this->addDurationMs($featureKey, $variant, (int) $outcome['durationMs'], true);
+            }
+        } elseif (isset($outcome['durationMs']) && (int) $outcome['durationMs'] > 0) {
+            $this->addDurationMs($featureKey, $variant, (int) $outcome['durationMs'], false);
+        }
+    }
+
+    public function beginUsage(string $featureKey, string $variant = 'enabled'): FeatureUsageScope
+    {
+        if ($featureKey === '') {
+            return FeatureUsageScope::noop();
+        }
+        $variant = $variant !== '' ? $variant : 'enabled';
+        $this->recordUsage($featureKey, $variant);
+
+        return new FeatureUsageScope($this, $featureKey, $variant);
+    }
+
+    /**
+     * @template T
+     * @param callable(FeatureUsageScope): T $action
+     * @return T
+     */
+    public function use(string $featureKey, callable $action, string $variant = 'enabled')
+    {
+        $scope = $this->beginUsage($featureKey, $variant);
+        try {
+            return $action($scope);
+        } catch (\Throwable $e) {
+            if ($this->isUsageCancellation($e)) {
+                $scope->markCancelled();
+            } else {
+                $scope->fail();
+            }
+            throw $e;
+        } finally {
+            $scope->complete();
         }
     }
 
@@ -302,19 +355,49 @@ class UsageStatsProvider implements UsageStatsProviderInterface
     }
 
     /**
-     * @param 'checkCount'|'requestCount'|'usedCount'|'viewedCount' $field
+     * @param 'checkCount'|'requestCount'|'usedCount'|'viewedCount'|'errorCount' $field
      */
     private function bumpVariant(string $featureKey, string $variant, string $field): void
     {
         if (!isset($this->variantStats[$featureKey][$variant])) {
-            $this->variantStats[$featureKey][$variant] = [
-                'checkCount' => 0,
-                'requestCount' => 0,
-                'usedCount' => 0,
-                'viewedCount' => 0,
-            ];
+            $this->variantStats[$featureKey][$variant] = $this->emptyVariantStats();
         }
         $this->variantStats[$featureKey][$variant][$field]++;
+    }
+
+    private function addDurationMs(string $featureKey, string $variant, int $durationMs, bool $failed): void
+    {
+        if ($durationMs <= 0) {
+            return;
+        }
+        if (!isset($this->variantStats[$featureKey][$variant])) {
+            $this->variantStats[$featureKey][$variant] = $this->emptyVariantStats();
+        }
+        $field = $failed ? 'errorDurationSumMs' : 'durationSumMs';
+        $this->variantStats[$featureKey][$variant][$field] += $durationMs;
+    }
+
+    /**
+     * @return array{checkCount: int, requestCount: int, usedCount: int, viewedCount: int, errorCount: int, durationSumMs: int, errorDurationSumMs: int}
+     */
+    private function emptyVariantStats(): array
+    {
+        return [
+            'checkCount' => 0,
+            'requestCount' => 0,
+            'usedCount' => 0,
+            'viewedCount' => 0,
+            'errorCount' => 0,
+            'durationSumMs' => 0,
+            'errorDurationSumMs' => 0,
+        ];
+    }
+
+    private function isUsageCancellation(\Throwable $error): bool
+    {
+        $name = (new \ReflectionClass($error))->getShortName();
+
+        return $name === 'AbortException' || $name === 'CanceledException';
     }
 
     private function recordUniqueUserId(string $featureKey, string $userId): void
@@ -405,6 +488,9 @@ class UsageStatsProvider implements UsageStatsProviderInterface
                     || $vs['requestCount'] > 0
                     || $vs['usedCount'] > 0
                     || $vs['viewedCount'] > 0
+                    || $vs['errorCount'] > 0
+                    || $vs['durationSumMs'] > 0
+                    || $vs['errorDurationSumMs'] > 0
                 ) {
                     $variantWire[$name] = $vs;
                 }
@@ -481,32 +567,7 @@ class UsageStatsProvider implements UsageStatsProviderInterface
             if (!is_array($stat)) {
                 continue;
             }
-            $feature = (string) ($stat['feature'] ?? '');
-            if ($feature === '') {
-                continue;
-            }
-            foreach ($stat['variantStats'] ?? [] as $name => $vs) {
-                if (!is_array($vs)) {
-                    continue;
-                }
-                if (!isset($this->variantStats[$feature][$name])) {
-                    $this->variantStats[$feature][$name] = [
-                        'checkCount' => 0,
-                        'requestCount' => 0,
-                        'usedCount' => 0,
-                        'viewedCount' => 0,
-                    ];
-                }
-                foreach (['checkCount', 'requestCount', 'usedCount', 'viewedCount'] as $field) {
-                    $this->variantStats[$feature][$name][$field] += (int) ($vs[$field] ?? 0);
-                }
-            }
-            foreach ($stat['uniqueUserHashes'] ?? [] as $hash) {
-                $this->uniqueUserHashes[$feature][(int) $hash] = true;
-            }
-            foreach ($stat['uniqueViewedUserHashes'] ?? [] as $hash) {
-                $this->uniqueViewedUserHashes[$feature][(int) $hash] = true;
-            }
+            $this->restoreStatFromPayload($stat);
         }
         foreach ($payload['uniqueUserHashes'] ?? [] as $hash) {
             $this->applicationUniqueUserHashes[(int) $hash] = true;
@@ -516,6 +577,52 @@ class UsageStatsProvider implements UsageStatsProviderInterface
         }
         if (isset($payload['definitionCacheMisses'])) {
             $this->definitionCacheMisses += (int) $payload['definitionCacheMisses'];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $stat
+     */
+    private function restoreStatFromPayload(array $stat): void
+    {
+        $feature = (string) ($stat['feature'] ?? '');
+        if ($feature === '') {
+            return;
+        }
+        $this->restoreVariantStatsFromPayload($feature, $stat['variantStats'] ?? []);
+        foreach ($stat['uniqueUserHashes'] ?? [] as $hash) {
+            $this->uniqueUserHashes[$feature][(int) $hash] = true;
+        }
+        foreach ($stat['uniqueViewedUserHashes'] ?? [] as $hash) {
+            $this->uniqueViewedUserHashes[$feature][(int) $hash] = true;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $variantStats
+     */
+    private function restoreVariantStatsFromPayload(string $feature, array $variantStats): void
+    {
+        foreach ($variantStats as $name => $vs) {
+            if (!is_array($vs)) {
+                continue;
+            }
+            if (!isset($this->variantStats[$feature][$name])) {
+                $this->variantStats[$feature][$name] = $this->emptyVariantStats();
+            }
+            foreach (
+                [
+                    'checkCount',
+                    'requestCount',
+                    'usedCount',
+                    'viewedCount',
+                    'errorCount',
+                    'durationSumMs',
+                    'errorDurationSumMs',
+                ] as $field
+            ) {
+                $this->variantStats[$feature][$name][$field] += (int) ($vs[$field] ?? 0);
+            }
         }
     }
 

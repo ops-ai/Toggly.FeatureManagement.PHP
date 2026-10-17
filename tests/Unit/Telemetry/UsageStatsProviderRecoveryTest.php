@@ -196,6 +196,9 @@ class UsageStatsProviderRecoveryTest extends TestCase
             'requestCount' => 1,
             'usedCount' => 3,
             'viewedCount' => 4,
+            'errorCount' => 0,
+            'durationSumMs' => 0,
+            'errorDurationSumMs' => 0,
         ], $payload['stats'][0]['variantStats']['enabled']);
         $this->assertArrayNotHasKey('corrupt', $payload['stats'][0]['variantStats']);
         $this->assertSame([101], $payload['stats'][0]['uniqueUserHashes']);

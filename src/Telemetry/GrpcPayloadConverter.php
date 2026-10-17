@@ -42,6 +42,9 @@ final class GrpcPayloadConverter
                     'requestCount' => (int) ($vs['requestCount'] ?? 0),
                     'usedCount' => (int) ($vs['usedCount'] ?? 0),
                     'viewedCount' => (int) ($vs['viewedCount'] ?? 0),
+                    'errorCount' => (int) ($vs['errorCount'] ?? 0),
+                    'durationSumMs' => (int) ($vs['durationSumMs'] ?? 0),
+                    'errorDurationSumMs' => (int) ($vs['errorDurationSumMs'] ?? 0),
                 ]);
             }
             $stats[] = new StatMessage([

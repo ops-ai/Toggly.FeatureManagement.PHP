@@ -25,8 +25,18 @@ interface UsageStatsProviderInterface
     /**
      * Record a feature being used
      * @param string $featureKey Name/key of the feature
+     * @param string $variant Variant name (defaults to {@code enabled})
      */
-    public function recordUsage(string $featureKey): void;
+    public function recordUsage(string $featureKey, string $variant = 'enabled'): void;
+
+    /**
+     * Run an action inside a usage scope (attempt, duration, errors).
+     *
+     * @template T
+     * @param callable(\Toggly\FeatureManagement\Telemetry\FeatureUsageScope): T $action
+     * @return T
+     */
+    public function use(string $featureKey, callable $action, string $variant = 'enabled');
 
     /**
      * Record a feature being viewed / rendered

@@ -22,7 +22,8 @@ final class FeatureProviderRefreshResilienceTest extends TestCase
 
             public function recordCheck(string $featureKey, bool $allowed): void {}
             public function recordUsageWithContext(string $featureKey, $context, bool $allowed): void {}
-            public function recordUsage(string $featureKey): void {}
+            public function recordUsage(string $featureKey, string $variant = 'enabled'): void {}
+            public function use(string $featureKey, callable $action, string $variant = 'enabled') { return $action(new \Toggly\FeatureManagement\Telemetry\FeatureUsageScope(null, '', 'enabled')); }
             public function recordView(string $featureKey): void {}
             public function recordDefinitionCacheHit(): void { $this->definitionOutcomes[] = 'hit'; }
             public function recordDefinitionCacheMiss(): void { $this->definitionOutcomes[] = 'miss'; }
@@ -49,7 +50,8 @@ final class FeatureProviderRefreshResilienceTest extends TestCase
         $usage = new class implements UsageStatsProviderInterface {
             public function recordCheck(string $featureKey, bool $allowed): void {}
             public function recordUsageWithContext(string $featureKey, $context, bool $allowed): void {}
-            public function recordUsage(string $featureKey): void {}
+            public function recordUsage(string $featureKey, string $variant = 'enabled'): void {}
+            public function use(string $featureKey, callable $action, string $variant = 'enabled') { return $action(new \Toggly\FeatureManagement\Telemetry\FeatureUsageScope(null, '', 'enabled')); }
             public function recordView(string $featureKey): void {}
             public function recordDefinitionCacheHit(): void { throw new \RuntimeException('hit observer unavailable'); }
             public function recordDefinitionCacheMiss(): void { throw new \RuntimeException('miss observer unavailable'); }

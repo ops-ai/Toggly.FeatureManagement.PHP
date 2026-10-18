@@ -13,7 +13,8 @@ class SonarWorkflowContractTest extends TestCase
     {
         $sonar = $this->sonarJob();
 
-        $this->assertStringContainsString('needs: [test]', $sonar);
+        $this->assertStringContainsString('needs: [commits-since-last-run, test]', $sonar);
+        $this->assertStringContainsString("needs.test.result == 'success'", $sonar);
         $this->assertStringContainsString('scan_mode: ${{ steps.sonar-eligibility.outputs.scan }}', $sonar);
         $this->assertStringNotContainsString('if: always()', $sonar);
         $this->assertStringContainsString('Require coverage and test reports', $sonar);
@@ -64,7 +65,39 @@ class SonarWorkflowContractTest extends TestCase
         $this->assertStringContainsString('SONAR_RESULT: ${{ needs.sonar.result }}', $summary);
         $this->assertStringContainsString('Sonar analysis did not complete successfully', $summary);
         $this->assertStringContainsString('Sonar scans were skipped for a forked pull request', $summary);
+        $this->assertStringContainsString('Skipped analysis. main has no commits since the last run.', $summary);
+        $this->assertStringContainsString('Could not determine whether main has commits since the last run', $summary);
         $this->assertStringNotContainsString('✅ Analysis workflow completed', $summary);
+    }
+
+    public function testNightlyScheduleRunsOnlyWhenMainHasNewCommits(): void
+    {
+        $workflow = $this->workflow();
+
+        $this->assertStringContainsString("cron: '0 7 * * *'", $workflow);
+        $this->assertStringContainsString('commits-since-last-run:', $workflow);
+        $this->assertStringContainsString('should_run=false', $workflow);
+        $this->assertSame(
+            6,
+            substr_count(
+                $workflow,
+                "github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true'"
+            )
+        );
+    }
+
+    public function testSonarScansSendRootComposerVersion(): void
+    {
+        $sonar = $this->sonarJob();
+
+        $this->assertSame(
+            2,
+            substr_count($sonar, '-Dsonar.projectVersion=${{ steps.sdk-version.outputs.version }}')
+        );
+        $this->assertStringContainsString(
+            'Root composer.json version is required for Sonar analysis.',
+            $sonar
+        );
     }
 
     private function workflow(): string

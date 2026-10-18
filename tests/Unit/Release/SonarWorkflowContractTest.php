@@ -13,7 +13,8 @@ class SonarWorkflowContractTest extends TestCase
     {
         $sonar = $this->sonarJob();
 
-        $this->assertStringContainsString('needs: [test]', $sonar);
+        $this->assertStringContainsString('needs: [commits-since-last-run, test]', $sonar);
+        $this->assertStringContainsString("needs.test.result == 'success'", $sonar);
         $this->assertStringContainsString('scan_mode: ${{ steps.sonar-eligibility.outputs.scan }}', $sonar);
         $this->assertStringNotContainsString('if: always()', $sonar);
         $this->assertStringContainsString('Require coverage and test reports', $sonar);
@@ -77,7 +78,7 @@ class SonarWorkflowContractTest extends TestCase
         $this->assertStringContainsString('commits-since-last-run:', $workflow);
         $this->assertStringContainsString('should_run=false', $workflow);
         $this->assertSame(
-            5,
+            6,
             substr_count(
                 $workflow,
                 "github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true'"

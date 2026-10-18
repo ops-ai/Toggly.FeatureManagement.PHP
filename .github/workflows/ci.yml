@@ -10,10 +10,49 @@ on:
       - develop
       - main
   workflow_dispatch:
+  schedule:
+    # 07:00 UTC (02:00 America/Chicago). Scheduled workflows run from main.
+    - cron: '0 7 * * *'
 
 jobs:
+  commits-since-last-run:
+    name: Check for commits since last run
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Compare main with the previous run
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current=$(git rev-parse HEAD)
+          last=$(gh run list \
+            --workflow=ci.yml \
+            --branch=main \
+            --limit=30 \
+            --json databaseId,headSha \
+            --jq "map(select(.databaseId != ${GITHUB_RUN_ID}))[0].headSha")
+          if [ -z "${last}" ] || [ "${last}" = "null" ] || [ "${last}" != "${current}" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "main ${current} differs from the previous run (${last:-none})."
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "main ${current} matches the previous run. Skipping analysis."
+          fi
+
   test:
     name: Test PHP ${{ matrix.php-version }}
+    needs: [commits-since-last-run]
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -90,6 +129,8 @@ jobs:
 
   smoke-test:
     name: Smoke Test
+    needs: [commits-since-last-run]
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -115,6 +156,8 @@ jobs:
 
   laravel-hosts:
     name: Laravel ${{ matrix.laravel-version }} on PHP ${{ matrix.php-version }}
+    needs: [commits-since-last-run]
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -169,6 +212,8 @@ jobs:
 
   wordpress-host:
     name: WordPress 7.1 on PHP 8.5
+    needs: [commits-since-last-run]
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -318,6 +363,18 @@ jobs:
             exit 1
           fi
 
+      - name: Read SDK version
+        id: sdk-version
+        if: steps.sonar-eligibility.outputs.scan == 'true'
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.version // empty' composer.json)
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::Root composer.json version is required for Sonar analysis." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: SonarCloud Scan and Quality Gate
         if: steps.sonar-eligibility.outputs.scan == 'true'
         uses: SonarSource/sonarqube-scan-action@v8.2.2
@@ -329,6 +386,7 @@ jobs:
           args: >
             -Dsonar.projectKey=toggly-sdks-php
             -Dsonar.organization=ops-ai
+            -Dsonar.projectVersion=${{ steps.sdk-version.outputs.version }}
             -Dsonar.projectName="Toggly SDKs - PHP"
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
@@ -348,6 +406,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=toggly-sdks-php
+            -Dsonar.projectVersion=${{ steps.sdk-version.outputs.version }}
             -Dsonar.projectName="Toggly SDKs - PHP"
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
@@ -418,6 +477,8 @@ jobs:
 
   dependency-check:
     name: OWASP Dependency Check
+    needs: [commits-since-last-run]
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -469,17 +530,28 @@ jobs:
   summary:
     name: Analysis Summary
     runs-on: ubuntu-latest
-    needs: [test, smoke-test, laravel-hosts, wordpress-host, sonar, dependency-check]
+    needs: [commits-since-last-run, test, smoke-test, laravel-hosts, wordpress-host, sonar, dependency-check]
     if: always()
 
     steps:
       - name: Generate summary
         env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          SHOULD_RUN: ${{ needs.commits-since-last-run.outputs.should_run }}
+          CHECK_RESULT: ${{ needs.commits-since-last-run.result }}
           SONAR_RESULT: ${{ needs.sonar.result }}
           SONAR_SCAN_MODE: ${{ needs.sonar.outputs.scan_mode }}
         run: |
           echo "## PHP SDK Analysis Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$SHOULD_RUN" != "true" ]; then
+            if [ "$CHECK_RESULT" != "success" ]; then
+              echo "::error::Could not determine whether main has commits since the last run (check result: $CHECK_RESULT)." >&2
+              exit 1
+            fi
+            echo "Skipped analysis. main has no commits since the last run." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
           if [ "$SONAR_RESULT" != "success" ]; then
             echo "::error::Sonar analysis did not complete successfully (result: $SONAR_RESULT)." >&2
             exit 1

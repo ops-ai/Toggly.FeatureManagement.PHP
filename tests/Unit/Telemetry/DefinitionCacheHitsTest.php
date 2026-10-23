@@ -167,6 +167,36 @@ class DefinitionCacheHitsTest extends TestCase
         $this->assertSame('AlwaysOn', $filters[0]->name);
     }
 
+    public function testHttp200WithoutEtagHeaderRecordsMissAndClearsStoredEtag(): void
+    {
+        $captured = null;
+        $grpc = $this->capturingGrpc($captured);
+        $usage = $this->usageProvider($grpc);
+        $etag = '"rev-1"';
+        $http = $this->createMock(TogglyHttpClient::class);
+        $http->method('getLastETag')->willReturnCallback(static function () use (&$etag) {
+            return $etag;
+        });
+        $http->expects($this->once())->method('clearETag')->willReturnCallback(static function () use (&$etag): void {
+            $etag = null;
+        });
+        $http->expects($this->once())->method('get')->willReturnCallback(function () {
+            return $this->jsonResponseWithoutEtag(
+                '[{"featureKey":"feature-a","filters":[{"name":"AlwaysOn"}]}]'
+            );
+        });
+
+        $provider = $this->featureProvider($http, $usage);
+        $this->setPrivate($provider, 'loaded', true);
+        $provider->refreshFeatures(true);
+        $usage->sendStats();
+
+        $this->assertNull($etag);
+        $this->assertIsArray($captured);
+        $this->assertSame(1, $captured['definitionCacheMisses']);
+        $this->assertArrayNotHasKey('definitionCacheHits', $captured);
+    }
+
     public function testMatchingEtagOn200AppliesClearedFilters(): void
     {
         $captured = null;
@@ -367,6 +397,20 @@ class DefinitionCacheHitsTest extends TestCase
         $response->method('getHeaderLine')->willReturnCallback(static function (string $name) use ($etag) {
             return strcasecmp($name, 'ETag') === 0 ? $etag : '';
         });
+
+        return $response;
+    }
+
+    private function jsonResponseWithoutEtag(string $body): ResponseInterface
+    {
+        $stream = $this->createMock(StreamInterface::class);
+        $stream->method('rewind');
+        $stream->method('getContents')->willReturn($body);
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('getBody')->willReturn($stream);
+        $response->method('getStatusCode')->willReturn(200);
+        $response->method('getHeaderLine')->willReturn('');
 
         return $response;
     }

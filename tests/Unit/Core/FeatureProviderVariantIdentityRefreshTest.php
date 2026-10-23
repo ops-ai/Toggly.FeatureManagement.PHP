@@ -6,7 +6,6 @@ use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 use Toggly\FeatureManagement\Config\TogglySettings;
-use Toggly\FeatureManagement\Contracts\FeatureStateServiceInterface;
 use Toggly\FeatureManagement\Core\FeatureProvider;
 use Toggly\FeatureManagement\Core\FeatureStateService;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;

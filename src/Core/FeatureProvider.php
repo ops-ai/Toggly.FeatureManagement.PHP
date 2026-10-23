@@ -373,7 +373,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             return;
         }
 
-        $etagUnchanged = $this->etagsMatch($previousEtag, $this->httpClient->getLastETag());
+        $etagUnchanged = $this->resolveEtagUnchangedAfterHttp200($response, $previousEtag);
         if ($etagUnchanged) {
             $this->logger->debug('Features etag unchanged on HTTP 200; applying response body');
         }
@@ -937,6 +937,21 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         }
 
         return '[]';
+    }
+
+    /**
+     * Whether the stored revision is unchanged after an HTTP 200. Missing response ETag
+     * clears the client tag and counts as changed (cache miss) so telemetry is not a false hit.
+     */
+    private function resolveEtagUnchangedAfterHttp200(ResponseInterface $response, ?string $previousEtag): bool
+    {
+        if (trim($response->getHeaderLine('ETag')) === '') {
+            $this->httpClient->clearETag();
+            $this->logger->debug('HTTP 200 without ETag; treating revision as changed for telemetry');
+            return false;
+        }
+
+        return $this->etagsMatch($previousEtag, $this->httpClient->getLastETag());
     }
 
     private function etagsMatch(?string $left, ?string $right): bool

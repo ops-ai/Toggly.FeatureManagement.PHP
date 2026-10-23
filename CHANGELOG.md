@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-10-23
+
+### Fixed
+- Always apply HTTP 200 definition bodies even when the response `ETag` matches the
+  stored revision, so in-memory filters stay in sync after targeting is cleared
+  (LiveE2E identity-targeting) [OPS-2012]. Matching ETags still count as definition
+  cache hits; new revisions count as misses.
+
 ## [1.3.0] - 2026-10-11
 
 ### Added

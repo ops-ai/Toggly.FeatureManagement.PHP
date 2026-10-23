@@ -161,13 +161,16 @@ final class FeatureProviderVariantSnapshotPersistenceTest extends TestCase
         );
     }
 
-    private function response(string $body): ResponseInterface
+    private function response(string $body, string $etag = '"revision-1"'): ResponseInterface
     {
         $stream = $this->createMock(StreamInterface::class);
         $stream->method('rewind');
         $stream->method('getContents')->willReturn($body);
         $response = $this->createMock(ResponseInterface::class);
         $response->method('getBody')->willReturn($stream);
+        $response->method('getHeaderLine')->willReturnCallback(static function (string $name) use ($etag) {
+            return strcasecmp($name, 'ETag') === 0 ? $etag : '';
+        });
 
         return $response;
     }

@@ -4,9 +4,10 @@ namespace Toggly\FeatureManagement\Tests\Unit\Core;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamInterface;
 use Toggly\FeatureManagement\Config\TogglySettings;
-use Toggly\FeatureManagement\Contracts\FeatureStateServiceInterface;
 use Toggly\FeatureManagement\Core\FeatureProvider;
+use Toggly\FeatureManagement\Core\FeatureStateService;
 use Toggly\FeatureManagement\Http\TogglyHttpClient;
 
 final class FeatureProviderVariantIdentityRefreshTest extends TestCase
@@ -64,23 +65,49 @@ final class FeatureProviderVariantIdentityRefreshTest extends TestCase
         ], $paths);
     }
 
-    public function testWeakAndStrongEquivalentEtagsKeepTheVariantResponseUnparsed(): void
+    public function testWeakAndStrongEquivalentEtagsStillApplyVariantResponseBody(): void
     {
-        $response = $this->createMock(ResponseInterface::class);
-        $response->expects($this->never())->method('getBody');
+        $body = json_encode([
+            'defs' => [
+                'flag-a' => ['enabled' => true, 'variant' => 'control'],
+            ],
+            'timestamp' => 1,
+        ], JSON_THROW_ON_ERROR);
         $http = $this->createMock(TogglyHttpClient::class);
         $http->expects($this->never())->method('clearETag');
         $http->expects($this->once())->method('get')
             ->with('evaluated-variants-signed/app/Production')
-            ->willReturn($response);
-        $http->expects($this->exactly(2))->method('getLastETag')
-            ->willReturnOnConsecutiveCalls('W/"revision"', '"revision"');
+            ->willReturn($this->jsonResponse($body, '"revision"'));
+        $etagCalls = 0;
+        $http->method('getLastETag')->willReturnCallback(static function () use (&$etagCalls) {
+            $etagCalls++;
+            return $etagCalls === 1 ? 'W/"revision"' : '"revision"';
+        });
 
         $provider = $this->provider($http, null);
         $provider->refreshFeatures();
 
-        $this->assertNotNull($provider->getDebugInfo()['last_refresh']);
-        $this->assertFalse($provider->getDebugInfo()['loaded']);
+        $debug = $provider->getDebugInfo();
+        $this->assertNull($debug['last_error'], (string) $debug['last_error']);
+        $this->assertNotNull($debug['last_refresh']);
+        $this->assertTrue($debug['loaded']);
+        $this->assertNotNull($provider->getVariant('flag-a'));
+    }
+
+    private function jsonResponse(string $body, string $etag): ResponseInterface
+    {
+        $stream = $this->createMock(StreamInterface::class);
+        $stream->method('rewind');
+        $stream->method('getContents')->willReturn($body);
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('getBody')->willReturn($stream);
+        $response->method('getStatusCode')->willReturn(200);
+        $response->method('getHeaderLine')->willReturnCallback(static function (string $name) use ($etag) {
+            return strcasecmp($name, 'ETag') === 0 ? $etag : '';
+        });
+
+        return $response;
     }
 
     private function provider(TogglyHttpClient $http, ?string $identity): FeatureProvider
@@ -95,7 +122,7 @@ final class FeatureProviderVariantIdentityRefreshTest extends TestCase
                 'use_signed_definitions' => false,
             ]),
             $http,
-            $this->createStub(FeatureStateServiceInterface::class)
+            new FeatureStateService()
         );
     }
 }

@@ -364,14 +364,9 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             }
 
             $newEtag = $this->httpClient->getLastETag();
-            // HTTP 200 whose revision/etag matches existing (CDN replay) — cache hit.
-            if ($this->etagsMatch($previousEtag, $newEtag)) {
-                $this->logger->debug('Features etag unchanged on HTTP 200 (CDN replay)');
-                $this->recordDefinitionCacheHit();
-                $outcomeRecorded = true;
-                $this->lastRefresh = time();
-                $this->tryConnectWebSocket();
-                return;
+            $etagUnchanged = $this->etagsMatch($previousEtag, $newEtag);
+            if ($etagUnchanged) {
+                $this->logger->debug('Features etag unchanged on HTTP 200; applying response body');
             }
 
             $response->getBody()->rewind();
@@ -388,7 +383,11 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             if ($this->settings->enableVariants) {
                 $applied = $this->processEvaluatedVariantsResponse($body, $data);
                 if ($applied) {
-                    $this->recordDefinitionCacheMiss();
+                    if ($etagUnchanged) {
+                        $this->recordDefinitionCacheHit();
+                    } else {
+                        $this->recordDefinitionCacheMiss();
+                    }
                 } else {
                     $this->recordDefinitionCacheHit();
                 }
@@ -491,7 +490,11 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             $this->loaded = true;
             $this->lastRefresh = time();
 
-            $this->recordDefinitionCacheMiss();
+            if ($etagUnchanged) {
+                $this->recordDefinitionCacheHit();
+            } else {
+                $this->recordDefinitionCacheMiss();
+            }
             $outcomeRecorded = true;
 
             // Try to establish WebSocket connection

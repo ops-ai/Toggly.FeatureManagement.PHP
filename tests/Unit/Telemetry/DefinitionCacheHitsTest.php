@@ -162,6 +162,50 @@ class DefinitionCacheHitsTest extends TestCase
         $this->assertIsArray($captured);
         $this->assertSame(1, $captured['definitionCacheHits']);
         $this->assertArrayNotHasKey('definitionCacheMisses', $captured);
+        $filters = $provider->getFeatureDefinition('feature-a')->filters;
+        $this->assertCount(1, $filters);
+        $this->assertSame('AlwaysOn', $filters[0]->name);
+    }
+
+    public function testMatchingEtagOn200AppliesClearedFilters(): void
+    {
+        $captured = null;
+        $grpc = $this->capturingGrpc($captured);
+        $usage = $this->usageProvider($grpc);
+        $etag = '"rev-same"';
+        $http = $this->createMock(TogglyHttpClient::class);
+        $http->method('getLastETag')->willReturnCallback(static function () use (&$etag) {
+            return $etag;
+        });
+        $http->expects($this->once())->method('get')->willReturnCallback(function () {
+            return $this->jsonResponse(
+                '[{"featureKey":"filter-targeting","filters":[]}]',
+                '"rev-same"'
+            );
+        });
+        $http->method('clearETag');
+
+        $provider = $this->featureProvider($http, $usage);
+        $this->setPrivate($provider, 'loaded', true);
+        $this->setPrivate($provider, 'definitions', [
+            'filter-targeting' => new FeatureDefinition([
+                'featureKey' => 'filter-targeting',
+                'filters' => [[
+                    'name' => 'TargetingUsers',
+                    'parameters' => ['Users' => ['alice']],
+                ]],
+            ]),
+        ]);
+
+        $provider->refreshFeatures(true);
+        $usage->sendStats();
+
+        $def = $provider->getFeatureDefinition('filter-targeting');
+        $this->assertNotNull($def);
+        $this->assertSame([], $def->filters);
+        $this->assertIsArray($captured);
+        $this->assertSame(1, $captured['definitionCacheHits']);
+        $this->assertArrayNotHasKey('definitionCacheMisses', $captured);
     }
 
     public function testNetworkErrorKeepingLastGoodRecordsHit(): void

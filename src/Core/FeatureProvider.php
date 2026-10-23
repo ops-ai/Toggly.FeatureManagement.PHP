@@ -17,6 +17,7 @@ use Toggly\FeatureManagement\Models\FeatureDefinition;
 use Toggly\FeatureManagement\Models\SignedDefinitionsResponse;
 use Toggly\FeatureManagement\Security\EcdsaSignatureVerifier;
 use Toggly\FeatureManagement\Security\JwkManager;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -301,15 +302,8 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             return;
         }
 
-        // Scheduled skip (live WS + fallback window) must not suppress WS-forced refresh.
-        if (!$force && $this->webSocketClient->isRunning()) {
-            $now = time();
-            if ($this->lastFallbackPoll !== null && ($now - $this->lastFallbackPoll) < $this->fallbackInterval) {
-                $this->logger->debug('Skipping scheduled refresh — WebSocket is connected');
-                $this->recordDefinitionCacheHit();
-                return;
-            }
-            $this->lastFallbackPoll = $now;
+        if ($this->skipScheduledRefreshWhileWebSocketLive($force)) {
+            return;
         }
 
         if ($force) {
@@ -321,184 +315,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         $outcomeRecorded = false;
 
         try {
-            // Ensure initial load happens
-            if (!$this->loaded) {
-                $this->loadSnapshot();
-            }
-
-            if ($this->settings->enableVariants) {
-                $identity = $this->getVariantIdentity();
-                if ($this->lastVariantsFetchIdentity !== $identity) {
-                    $this->httpClient->clearETag();
-                }
-                $this->lastVariantsFetchIdentity = $identity;
-
-                $path = sprintf(
-                    'evaluated-variants-signed/%s/%s',
-                    rawurlencode($this->settings->appKey),
-                    rawurlencode($this->settings->environment)
-                );
-                $query = [];
-                if ($identity !== null && $identity !== '') {
-                    $query['userId'] = $identity;
-                }
-                if ($query !== []) {
-                    $path .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
-                }
-            } elseif ($this->settings->useSignedDefinitions) {
-                $path = "definitions-signed/{$this->settings->appKey}/{$this->settings->environment}";
-            } else {
-                $path = "definitions/{$this->settings->appKey}/{$this->settings->environment}";
-            }
-
-            $previousEtag = $this->httpClient->getLastETag();
-            $response = $this->httpClient->get($path);
-
-            // Handle 304 Not Modified
-            if ($response === null) {
-                $this->logger->debug('Features not modified (304)');
-                $this->recordDefinitionCacheHit();
-                $outcomeRecorded = true;
-                $this->tryConnectWebSocket();
-                return;
-            }
-
-            $newEtag = $this->httpClient->getLastETag();
-            $etagUnchanged = $this->etagsMatch($previousEtag, $newEtag);
-            if ($etagUnchanged) {
-                $this->logger->debug('Features etag unchanged on HTTP 200; applying response body');
-            }
-
-            $response->getBody()->rewind();
-            $body = $response->getBody()->getContents();
-            $data = json_decode($body, true);
-
-            if ($data === null) {
-                $this->logger->warning('Received empty or invalid response from Toggly');
-                $this->recordDefinitionCacheHit();
-                $outcomeRecorded = true;
-                return;
-            }
-
-            if ($this->settings->enableVariants) {
-                $applied = $this->processEvaluatedVariantsResponse($body, $data);
-                if ($applied) {
-                    if ($etagUnchanged) {
-                        $this->recordDefinitionCacheHit();
-                    } else {
-                        $this->recordDefinitionCacheMiss();
-                    }
-                } else {
-                    $this->recordDefinitionCacheHit();
-                }
-                $outcomeRecorded = true;
-                return;
-            }
-
-            $features = [];
-
-            if ($this->settings->useSignedDefinitions) {
-                $signedResponse = new SignedDefinitionsResponse($data);
-
-                // Check timestamp
-                if ($this->lastDefinitionsTimestamp !== null && $signedResponse->timestamp < $this->lastDefinitionsTimestamp) {
-                    $this->logger->warning('Received definitions with older timestamp', [
-                        'current' => $this->lastDefinitionsTimestamp,
-                        'received' => $signedResponse->timestamp,
-                    ]);
-                    $this->recordDefinitionCacheHit();
-                    $outcomeRecorded = true;
-                    return;
-                }
-
-                // Verify signature
-                try {
-                    // Extract the raw defs value from the JSON body for signature verification
-                    $rawDefs = $this->extractSignedDefsFromBody($body);
-
-                    $valid = $this->signatureVerifier->verify(
-                        $rawDefs,
-                        $signedResponse->signature,
-                        $signedResponse->kid,
-                        $signedResponse->timestamp
-                    );
-
-                    if (!$valid) {
-                        $this->reportError('Invalid signature');
-                        $this->recordDefinitionCacheHit();
-                        $outcomeRecorded = true;
-                        return;
-                    }
-                } catch (SignatureVerificationException $e) {
-                    $this->reportError('Signature verification failed', $e);
-                    $this->recordDefinitionCacheHit();
-                    $outcomeRecorded = true;
-                    return;
-                }
-
-                $features = $signedResponse->defs;
-                $this->lastDefinitionsTimestamp = $signedResponse->timestamp;
-
-                // Save snapshot with exact signed defs bytes
-                if ($this->snapshotProvider !== null) {
-                    $rawDefs = $this->extractSignedDefsFromBody($body);
-                    $this->snapshotProvider->saveSnapshot(
-                        $features,
-                        $signedResponse->signature,
-                        $signedResponse->kid,
-                        $signedResponse->timestamp,
-                        $rawDefs,
-                        $this->httpClient->getLastETag()
-                    );
-                }
-            } else {
-                // Unsigned definitions
-                $features = array_map(function ($def) {
-                    return new FeatureDefinition($def);
-                }, $data);
-
-                // Save snapshot
-                if ($this->snapshotProvider !== null) {
-                    $this->snapshotProvider->saveSnapshot($features);
-                }
-            }
-
-            // Update definitions
-            foreach ($features as $featureDefinition) {
-                $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
-
-                // Track secured features
-                if ($featureDefinition->securedFeature) {
-                    $this->secureFeatures[$featureDefinition->featureKey] = true;
-                } else {
-                    unset($this->secureFeatures[$featureDefinition->featureKey]);
-                }
-
-                // Update feature state
-                $isEnabled = $this->isAlwaysOn($featureDefinition);
-                if ($this->featureStateService instanceof FeatureStateService) {
-                    $this->featureStateService->updateFeatureState($featureDefinition->featureKey, $isEnabled);
-                }
-            }
-
-            // Update experiments mapping
-            $this->updateExperimentsMapping($features);
-
-            if ($this->featureStateService instanceof FeatureStateService) {
-                $this->featureStateService->notifyDefinitionsChanged();
-            }
-            $this->loaded = true;
-            $this->lastRefresh = time();
-
-            if ($etagUnchanged) {
-                $this->recordDefinitionCacheHit();
-            } else {
-                $this->recordDefinitionCacheMiss();
-            }
-            $outcomeRecorded = true;
-
-            // Try to establish WebSocket connection
-            $this->tryConnectWebSocket();
+            $this->runDefinitionsRefreshAttempt($outcomeRecorded);
         } catch (\Exception $e) {
             // Keep last-known-good in-memory definitions (LKG); report error.
             $this->reportError('Error refreshing features list', $e);
@@ -512,6 +329,246 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
                 // Drain WS notifies that arrived while we were in flight (no count on the skip).
                 $this->refreshFeatures(true);
             }
+        }
+    }
+
+    /**
+     * Scheduled skip (live WS + fallback window) must not suppress WS-forced refresh.
+     */
+    private function skipScheduledRefreshWhileWebSocketLive(bool $force): bool
+    {
+        if ($force || !$this->webSocketClient->isRunning()) {
+            return false;
+        }
+
+        $now = time();
+        if ($this->lastFallbackPoll !== null && ($now - $this->lastFallbackPoll) < $this->fallbackInterval) {
+            $this->logger->debug('Skipping scheduled refresh — WebSocket is connected');
+            $this->recordDefinitionCacheHit();
+            return true;
+        }
+
+        $this->lastFallbackPoll = $now;
+        return false;
+    }
+
+    /**
+     * Fetch definitions from the network and apply them when the response carries a body.
+     */
+    private function runDefinitionsRefreshAttempt(bool &$outcomeRecorded): void
+    {
+        if (!$this->loaded) {
+            $this->loadSnapshot();
+        }
+
+        $path = $this->buildDefinitionsRefreshPath();
+        $previousEtag = $this->httpClient->getLastETag();
+        $response = $this->httpClient->get($path);
+
+        if ($response === null) {
+            $this->logger->debug('Features not modified (304)');
+            $this->recordDefinitionCacheHit();
+            $outcomeRecorded = true;
+            $this->tryConnectWebSocket();
+            return;
+        }
+
+        $etagUnchanged = $this->etagsMatch($previousEtag, $this->httpClient->getLastETag());
+        if ($etagUnchanged) {
+            $this->logger->debug('Features etag unchanged on HTTP 200; applying response body');
+        }
+
+        $parsed = $this->parseRefreshResponseBody($response);
+        if ($parsed === null) {
+            $this->recordDefinitionCacheHit();
+            $outcomeRecorded = true;
+            return;
+        }
+
+        $this->applyRefreshResponse($parsed['body'], $parsed['data'], $etagUnchanged, $outcomeRecorded);
+    }
+
+    private function buildDefinitionsRefreshPath(): string
+    {
+        if ($this->settings->enableVariants) {
+            $identity = $this->getVariantIdentity();
+            if ($this->lastVariantsFetchIdentity !== $identity) {
+                $this->httpClient->clearETag();
+            }
+            $this->lastVariantsFetchIdentity = $identity;
+
+            $path = sprintf(
+                'evaluated-variants-signed/%s/%s',
+                rawurlencode($this->settings->appKey),
+                rawurlencode($this->settings->environment)
+            );
+            $query = [];
+            if ($identity !== null && $identity !== '') {
+                $query['userId'] = $identity;
+            }
+            if ($query !== []) {
+                $path .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+            }
+
+            return $path;
+        }
+
+        if ($this->settings->useSignedDefinitions) {
+            return "definitions-signed/{$this->settings->appKey}/{$this->settings->environment}";
+        }
+
+        return "definitions/{$this->settings->appKey}/{$this->settings->environment}";
+    }
+
+    /**
+     * @return array{body: string, data: array<mixed>}|null
+     */
+    private function parseRefreshResponseBody(ResponseInterface $response): ?array
+    {
+        $response->getBody()->rewind();
+        $body = $response->getBody()->getContents();
+        $data = json_decode($body, true);
+
+        if ($data === null) {
+            $this->logger->warning('Received empty or invalid response from Toggly');
+            return null;
+        }
+
+        return ['body' => $body, 'data' => $data];
+    }
+
+    /**
+     * @param array<mixed> $data
+     */
+    private function applyRefreshResponse(string $body, array $data, bool $etagUnchanged, bool &$outcomeRecorded): void
+    {
+        if ($this->settings->enableVariants) {
+            $applied = $this->processEvaluatedVariantsResponse($body, $data);
+            if ($applied) {
+                $this->recordRefreshCacheOutcome($etagUnchanged);
+            } else {
+                $this->recordDefinitionCacheHit();
+            }
+            $outcomeRecorded = true;
+            return;
+        }
+
+        $features = $this->resolveFeaturesFromRefreshPayload($body, $data, $outcomeRecorded);
+        if ($features === null) {
+            return;
+        }
+
+        $this->mergeRefreshedFeatureDefinitions($features);
+        $this->loaded = true;
+        $this->lastRefresh = time();
+        $this->recordRefreshCacheOutcome($etagUnchanged);
+        $outcomeRecorded = true;
+        $this->tryConnectWebSocket();
+    }
+
+    private function recordRefreshCacheOutcome(bool $etagUnchanged): void
+    {
+        if ($etagUnchanged) {
+            $this->recordDefinitionCacheHit();
+        } else {
+            $this->recordDefinitionCacheMiss();
+        }
+    }
+
+    /**
+     * @param array<mixed> $data
+     * @return FeatureDefinition[]|null Null when refresh should stop early (outcome already recorded).
+     */
+    private function resolveFeaturesFromRefreshPayload(string $body, array $data, bool &$outcomeRecorded): ?array
+    {
+        if (!$this->settings->useSignedDefinitions) {
+            $features = array_map(function ($def) {
+                return new FeatureDefinition($def);
+            }, $data);
+
+            if ($this->snapshotProvider !== null) {
+                $this->snapshotProvider->saveSnapshot($features);
+            }
+
+            return $features;
+        }
+
+        $signedResponse = new SignedDefinitionsResponse($data);
+
+        if ($this->lastDefinitionsTimestamp !== null && $signedResponse->timestamp < $this->lastDefinitionsTimestamp) {
+            $this->logger->warning('Received definitions with older timestamp', [
+                'current' => $this->lastDefinitionsTimestamp,
+                'received' => $signedResponse->timestamp,
+            ]);
+            $this->recordDefinitionCacheHit();
+            $outcomeRecorded = true;
+            return null;
+        }
+
+        try {
+            $rawDefs = $this->extractSignedDefsFromBody($body);
+            $valid = $this->signatureVerifier->verify(
+                $rawDefs,
+                $signedResponse->signature,
+                $signedResponse->kid,
+                $signedResponse->timestamp
+            );
+
+            if (!$valid) {
+                $this->reportError('Invalid signature');
+                $this->recordDefinitionCacheHit();
+                $outcomeRecorded = true;
+                return null;
+            }
+        } catch (SignatureVerificationException $e) {
+            $this->reportError('Signature verification failed', $e);
+            $this->recordDefinitionCacheHit();
+            $outcomeRecorded = true;
+            return null;
+        }
+
+        $features = $signedResponse->defs;
+        $this->lastDefinitionsTimestamp = $signedResponse->timestamp;
+
+        if ($this->snapshotProvider !== null) {
+            $rawDefs = $this->extractSignedDefsFromBody($body);
+            $this->snapshotProvider->saveSnapshot(
+                $features,
+                $signedResponse->signature,
+                $signedResponse->kid,
+                $signedResponse->timestamp,
+                $rawDefs,
+                $this->httpClient->getLastETag()
+            );
+        }
+
+        return $features;
+    }
+
+    /**
+     * @param FeatureDefinition[] $features
+     */
+    private function mergeRefreshedFeatureDefinitions(array $features): void
+    {
+        foreach ($features as $featureDefinition) {
+            $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
+
+            if ($featureDefinition->securedFeature) {
+                $this->secureFeatures[$featureDefinition->featureKey] = true;
+            } else {
+                unset($this->secureFeatures[$featureDefinition->featureKey]);
+            }
+
+            $isEnabled = $this->isAlwaysOn($featureDefinition);
+            if ($this->featureStateService instanceof FeatureStateService) {
+                $this->featureStateService->updateFeatureState($featureDefinition->featureKey, $isEnabled);
+            }
+        }
+
+        $this->updateExperimentsMapping($features);
+
+        if ($this->featureStateService instanceof FeatureStateService) {
+            $this->featureStateService->notifyDefinitionsChanged();
         }
     }
 

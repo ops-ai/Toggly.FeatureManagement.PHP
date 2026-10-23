@@ -458,7 +458,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             return;
         }
 
-        $this->mergeRefreshedFeatureDefinitions($features);
+        $this->restoreSnapshotFeatures($features);
         $this->loaded = true;
         $this->lastRefresh = time();
         $this->recordRefreshCacheOutcome($etagUnchanged);
@@ -493,6 +493,15 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             return $features;
         }
 
+        return $this->resolveSignedFeaturesFromRefreshPayload($body, $data, $outcomeRecorded);
+    }
+
+    /**
+     * @param array<mixed> $data
+     * @return FeatureDefinition[]|null
+     */
+    private function resolveSignedFeaturesFromRefreshPayload(string $body, array $data, bool &$outcomeRecorded): ?array
+    {
         $signedResponse = new SignedDefinitionsResponse($data);
 
         if ($this->lastDefinitionsTimestamp !== null && $signedResponse->timestamp < $this->lastDefinitionsTimestamp) {
@@ -505,25 +514,7 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
             return null;
         }
 
-        try {
-            $rawDefs = $this->extractSignedDefsFromBody($body);
-            $valid = $this->signatureVerifier->verify(
-                $rawDefs,
-                $signedResponse->signature,
-                $signedResponse->kid,
-                $signedResponse->timestamp
-            );
-
-            if (!$valid) {
-                $this->reportError('Invalid signature');
-                $this->recordDefinitionCacheHit();
-                $outcomeRecorded = true;
-                return null;
-            }
-        } catch (SignatureVerificationException $e) {
-            $this->reportError('Signature verification failed', $e);
-            $this->recordDefinitionCacheHit();
-            $outcomeRecorded = true;
+        if (!$this->verifySignedRefreshPayload($body, $signedResponse, $outcomeRecorded)) {
             return null;
         }
 
@@ -545,31 +536,32 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
         return $features;
     }
 
-    /**
-     * @param FeatureDefinition[] $features
-     */
-    private function mergeRefreshedFeatureDefinitions(array $features): void
-    {
-        foreach ($features as $featureDefinition) {
-            $this->definitions[$featureDefinition->featureKey] = $featureDefinition;
+    private function verifySignedRefreshPayload(
+        string $body,
+        SignedDefinitionsResponse $signedResponse,
+        bool &$outcomeRecorded
+    ): bool {
+        try {
+            $rawDefs = $this->extractSignedDefsFromBody($body);
+            $valid = $this->signatureVerifier->verify(
+                $rawDefs,
+                $signedResponse->signature,
+                $signedResponse->kid,
+                $signedResponse->timestamp
+            );
 
-            if ($featureDefinition->securedFeature) {
-                $this->secureFeatures[$featureDefinition->featureKey] = true;
-            } else {
-                unset($this->secureFeatures[$featureDefinition->featureKey]);
+            if ($valid) {
+                return true;
             }
 
-            $isEnabled = $this->isAlwaysOn($featureDefinition);
-            if ($this->featureStateService instanceof FeatureStateService) {
-                $this->featureStateService->updateFeatureState($featureDefinition->featureKey, $isEnabled);
-            }
+            $this->reportError('Invalid signature');
+        } catch (SignatureVerificationException $e) {
+            $this->reportError('Signature verification failed', $e);
         }
 
-        $this->updateExperimentsMapping($features);
-
-        if ($this->featureStateService instanceof FeatureStateService) {
-            $this->featureStateService->notifyDefinitionsChanged();
-        }
+        $this->recordDefinitionCacheHit();
+        $outcomeRecorded = true;
+        return false;
     }
 
     /**

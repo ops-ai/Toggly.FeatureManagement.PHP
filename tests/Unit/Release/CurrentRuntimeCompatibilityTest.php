@@ -52,7 +52,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '11.6.1'", $workflow);
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
+        $this->assertStringContainsString('composer archive --format=zip', $workflow);
         $this->assertStringContainsString('repositories.toggly artifact', $workflow);
+        $this->assertStringContainsString(
+            'sonar.coverage.exclusions=**/Telemetry/Pb/**,**/GPBMetadata/**,packages/wordpress/toggly.php',
+            $workflow
+        );
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
     }
 

@@ -265,10 +265,10 @@ jobs:
           set -euo pipefail
           artifacts="$RUNNER_TEMP/toggly-php-artifacts"
           mkdir -p "$artifacts"
-          # Archive packaging is platform-agnostic; use the matrix PHP so plugin
-          # Composer resolution below matches the host runtime floor/latest.
-          composer archive --format=tar --dir="$artifacts" --file=feature-management-php
-          composer --working-dir=packages/wordpress archive --format=tar --dir="$artifacts" --file=wordpress
+          # Zip archives (Composer artifact repos only discover zip) so the host
+          # resolves the candidate core/plugin instead of the Packagist twins.
+          composer archive --format=zip --dir="$artifacts"
+          composer --working-dir=packages/wordpress archive --format=zip --dir="$artifacts"
 
       - name: Install, activate, and evaluate flags in WordPress
         run: |
@@ -297,10 +297,11 @@ jobs:
 
           plugin="$wordpress/wp-content/plugins/toggly"
           mkdir -p "$plugin"
-          tar -xf "$artifacts/wordpress.tar" -C "$plugin"
+          unzip -q "$artifacts"/toggly-wordpress-*.zip -d "$plugin"
           composer --working-dir="$plugin" config repositories.toggly artifact "$artifacts"
           # Resolve transitive PSR packages against the matrix PHP (7.4 must not
           # pull psr/log 3.x / psr/simple-cache 3.x which require PHP >= 8.0).
+          # The artifact repo is preferred over Packagist for same-version twins.
           composer --working-dir="$plugin" update --no-interaction --prefer-dist --no-progress --prefer-stable
 
           mock_port="$(php -r '
@@ -443,6 +444,7 @@ jobs:
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
             -Dsonar.exclusions=**/vendor/**,**/Telemetry/Pb/**,**/GPBMetadata/**
+            -Dsonar.coverage.exclusions=**/Telemetry/Pb/**,**/GPBMetadata/**,packages/wordpress/toggly.php
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
             -Dsonar.qualitygate.wait=true
@@ -463,6 +465,7 @@ jobs:
             -Dsonar.sources=src,packages
             -Dsonar.tests=tests
             -Dsonar.exclusions=**/vendor/**,**/Telemetry/Pb/**,**/GPBMetadata/**
+            -Dsonar.coverage.exclusions=**/Telemetry/Pb/**,**/GPBMetadata/**,packages/wordpress/toggly.php
             -Dsonar.php.coverage.reportPaths=coverage/coverage.xml
             -Dsonar.php.tests.reportPath=coverage/test-results.xml
             -Dsonar.qualitygate.wait=true

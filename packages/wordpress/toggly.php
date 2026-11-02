@@ -18,9 +18,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// PHP 7.4 polyfills for core helpers that still call PHP 8.0 string functions
-// while both packages declare php ^7.4. Remove once core is 7.4-clean on the
-// live-update path used after definition refresh.
+// PHP 7.4 polyfills for published core builds that still call PHP 8.0 string
+// helpers on the live-update path after definition refresh. No-ops on PHP 8+.
 if (!function_exists('str_starts_with')) {
     /**
      * @param mixed $haystack

@@ -579,9 +579,10 @@ class FeatureProvider implements FeatureProviderInterface, SecureFeatureProvider
 
         try {
             $baseUrl = rtrim($this->settings->getBaseUrl(), '/');
-            if (str_starts_with($baseUrl, 'https://')) {
+            // PHP 7.4-compatible (avoid str_starts_with).
+            if (strpos($baseUrl, 'https://') === 0) {
                 $wsBase = 'wss://' . substr($baseUrl, 8);
-            } elseif (str_starts_with($baseUrl, 'http://')) {
+            } elseif (strpos($baseUrl, 'http://') === 0) {
                 $wsBase = 'ws://' . substr($baseUrl, 7);
             } else {
                 $wsBase = $baseUrl;

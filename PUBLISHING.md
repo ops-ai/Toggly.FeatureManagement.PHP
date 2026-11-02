@@ -36,10 +36,14 @@ Releases are handled by the **PHP SDK - Release** GitHub Actions workflow.
      still empty (new mirrors have no default branch; without this,
      `danharrin/monorepo-split` fails with `pathspec 'main' did not match`).
    - Subtree-split `packages/laravel` → `ops-ai/Toggly.FeatureManagement.PHP.Laravel`
-     (`main` + tag `v{version}`).
+     (`main` + tag `v{laravel composer.json version}`, skipped if that tag
+     already exists).
    - Subtree-split `packages/wordpress` → `ops-ai/Toggly.FeatureManagement.PHP.Wordpress`
-     (`main` + tag `v{version}`).
+     (`main` + tag `v{wordpress composer.json version}`, skipped if that tag
+     already exists).
 5. Packagist picks up new tags via webhook on **each** package’s GitHub URL.
+   Mirror tags must match each package’s own `composer.json` version — not the
+   core monorepo tag — or Packagist will ignore the tag.
 
 Do **not** invent new secret storage. Reuse `RELEASE_PUSH_TOKEN`.
 

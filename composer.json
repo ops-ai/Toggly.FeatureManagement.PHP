@@ -43,6 +43,8 @@
         "google/protobuf": "^3.25|^4.0|^5.0",
         "illuminate/cache": "^11.47",
         "illuminate/contracts": "^11.0",
+        "illuminate/http": "^11.0",
+        "illuminate/routing": "^11.0",
         "mongodb/mongodb": "^2.0",
         "phpunit/phpunit": "^9.0|^10.0",
         "textalk/websocket": "^1.6",

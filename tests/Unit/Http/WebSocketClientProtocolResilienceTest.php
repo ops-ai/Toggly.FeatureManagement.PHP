@@ -1,7 +1,7 @@
 <?php
 
 namespace Toggly\FeatureManagement\Http {
-    function stream_socket_client($address, &$errno = null, &$errstr = null, ...$options): mixed
+    function stream_socket_client($address, &$errno = null, &$errstr = null, ...$options)
     {
         if ($address === 'tcp://loopback.test:8080' && array_key_exists('toggly_protocol_test_socket', $GLOBALS)) {
             $errno = 0;
@@ -12,7 +12,7 @@ namespace Toggly\FeatureManagement\Http {
         return \stream_socket_client($address, $errno, $errstr, ...$options);
     }
 
-    function fgets($stream, ...$options): string|false
+    function fgets($stream, ...$options)
     {
         if ($stream === ($GLOBALS['toggly_protocol_test_socket'] ?? null)
             && array_key_exists('toggly_protocol_test_handshake_lines', $GLOBALS)) {
@@ -309,19 +309,27 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
         return $payload;
     }
 
-    private function call(WebSocketClient $client, string $method, mixed ...$arguments): mixed
+    private function call(WebSocketClient $client, string $method, ...$arguments)
     {
-        return (new \ReflectionMethod($client, $method))->invoke($client, ...$arguments);
+        $reflection = new \ReflectionMethod($client, $method);
+        $reflection->setAccessible(true);
+
+        return $reflection->invoke($client, ...$arguments);
     }
 
-    private function set(WebSocketClient $client, string $property, mixed $value): void
+    private function set(WebSocketClient $client, string $property, $value): void
     {
-        (new \ReflectionProperty($client, $property))->setValue($client, $value);
+        $reflection = new \ReflectionProperty($client, $property);
+        $reflection->setAccessible(true);
+        $reflection->setValue($client, $value);
     }
 
-    private function get(WebSocketClient $client, string $property): mixed
+    private function get(WebSocketClient $client, string $property)
     {
-        return (new \ReflectionProperty($client, $property))->getValue($client);
+        $reflection = new \ReflectionProperty($client, $property);
+        $reflection->setAccessible(true);
+
+        return $reflection->getValue($client);
     }
 }
 }

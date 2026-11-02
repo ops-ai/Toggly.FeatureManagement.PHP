@@ -41,11 +41,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         );
     }
 
-    public function testCiExercisesPhp85AndCurrentLaravelHostsFromPackedArtifacts(): void
+    public function testCiExercisesPhpFloorThroughLatestAndCurrentLaravelHostsFromPackedArtifacts(): void
     {
         $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
         $releaseWorkflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/release.yml');
 
+        $this->assertStringContainsString("php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']", $workflow);
         $this->assertStringContainsString("'8.5'", $workflow);
         $this->assertStringContainsString("laravel-version: '12.12.2'", $workflow);
         $this->assertStringContainsString("laravel-version: '13.10.1'", $workflow);
@@ -54,6 +55,19 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
         $this->assertStringContainsString('repositories.toggly artifact', $workflow);
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
+    }
+
+    public function testCoreDevConstraintsIncludeCurrentPhpunitIlluminateAndProtobufMajors(): void
+    {
+        $json = $this->readJson('composer.json');
+
+        $this->assertSame('^9.6|^10|^11|^12|^13', $json['require-dev']['phpunit/phpunit']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/cache']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/contracts']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/http']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/routing']);
+        $this->assertSame('^3.25|^4.0|^5.0', $json['require-dev']['google/protobuf']);
+        $this->assertStringContainsString('^5.0', $json['suggest']['google/protobuf']);
     }
 
     public function testLaravelHostJobsDoNotIgnoreSecurityAdvisoriesAndWordPressWaitsForMysql(): void

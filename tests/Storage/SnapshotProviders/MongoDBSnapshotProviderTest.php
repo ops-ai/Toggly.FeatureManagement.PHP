@@ -14,6 +14,9 @@ use Toggly\FeatureManagement\Models\JsonWebKeySet;
 use Toggly\FeatureManagement\Storage\SnapshotProviders\MongoDBSnapshotProvider;
 use Toggly\FeatureManagement\Contracts\FeatureSnapshotProviderInterface;
 
+/**
+ * @group integration
+ */
 #[Group('integration')]
 class MongoDBSnapshotProviderTest extends TestCase
 {
@@ -45,13 +48,13 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function implements_interface(): void
+    public function test_implements_interface(): void
     {
         $this->assertInstanceOf(FeatureSnapshotProviderInterface::class, $this->provider);
     }
 
     #[Test]
-    public function get_features_snapshot_when_empty_returns_nulls(): void
+    public function test_get_features_snapshot_when_empty_returns_nulls(): void
     {
         $result = $this->provider->getFeaturesSnapshot();
 
@@ -62,7 +65,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_and_get_features_snapshot(): void
+    public function test_save_and_get_features_snapshot(): void
     {
         $features = $this->createTestFeatures();
         $this->provider->saveSnapshot($features, 'test-signature', 'key-123', 1700000000);
@@ -79,7 +82,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_snapshot_with_null_optional_parameters(): void
+    public function test_save_snapshot_with_null_optional_parameters(): void
     {
         $features = $this->createTestFeatures();
         $this->provider->saveSnapshot($features);
@@ -93,7 +96,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_snapshot_updates_existing_record(): void
+    public function test_save_snapshot_updates_existing_record(): void
     {
         $features1 = $this->createTestFeatures();
         $this->provider->saveSnapshot($features1, 'sig-1', 'kid-1', 1700000001);
@@ -117,7 +120,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_snapshot_with_empty_list(): void
+    public function test_save_snapshot_with_empty_list(): void
     {
         $this->provider->saveSnapshot([]);
 
@@ -128,7 +131,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_snapshot_with_complex_features(): void
+    public function test_save_snapshot_with_complex_features(): void
     {
         $features = [
             new FeatureDefinition([
@@ -157,7 +160,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function get_jwk_snapshot_when_empty_returns_nulls(): void
+    public function test_get_jwk_snapshot_when_empty_returns_nulls(): void
     {
         $result = $this->provider->getJwkSnapshot();
 
@@ -166,7 +169,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_and_get_jwk_snapshot(): void
+    public function test_save_and_get_jwk_snapshot(): void
     {
         $jwks = $this->createTestJwks();
         $this->provider->saveJwkSnapshot($jwks, 1700000003);
@@ -180,7 +183,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_jwk_snapshot_updates_existing_record_with_optional_key_fields_absent(): void
+    public function test_save_jwk_snapshot_updates_existing_record_with_optional_key_fields_absent(): void
     {
         $jwks1 = $this->createTestJwks();
         $this->provider->saveJwkSnapshot($jwks1, 1700000001);
@@ -214,7 +217,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function save_jwk_snapshot_rejects_a_key_without_required_fields(): void
+    public function test_save_jwk_snapshot_rejects_a_key_without_required_fields(): void
     {
         $this->expectException(\Error::class);
         $this->expectExceptionMessage('JsonWebKey::$kty');
@@ -226,7 +229,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function round_trip_features_and_jwks(): void
+    public function test_round_trip_features_and_jwks(): void
     {
         $features = $this->createTestFeatures();
         $jwks = $this->createTestJwks();
@@ -246,7 +249,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function constructor_with_client_creates_collection(): void
+    public function test_constructor_with_client_creates_collection(): void
     {
         $provider = new MongoDBSnapshotProvider(
             $this->client,
@@ -269,7 +272,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function custom_document_ids(): void
+    public function test_custom_document_ids(): void
     {
         $provider = new MongoDBSnapshotProvider(
             $this->collection,
@@ -287,7 +290,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function clear_removes_all_snapshots(): void
+    public function test_clear_removes_all_snapshots(): void
     {
         $features = $this->createTestFeatures();
         $jwks = $this->createTestJwks();
@@ -305,13 +308,13 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function has_features_snapshot_returns_false_when_empty(): void
+    public function test_has_features_snapshot_returns_false_when_empty(): void
     {
         $this->assertFalse($this->provider->hasFeaturesSnapshot());
     }
 
     #[Test]
-    public function has_features_snapshot_returns_true_when_exists(): void
+    public function test_has_features_snapshot_returns_true_when_exists(): void
     {
         $this->provider->saveSnapshot($this->createTestFeatures());
         
@@ -319,13 +322,13 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function has_jwk_snapshot_returns_false_when_empty(): void
+    public function test_has_jwk_snapshot_returns_false_when_empty(): void
     {
         $this->assertFalse($this->provider->hasJwkSnapshot());
     }
 
     #[Test]
-    public function has_jwk_snapshot_returns_true_when_exists(): void
+    public function test_has_jwk_snapshot_returns_true_when_exists(): void
     {
         $this->provider->saveJwkSnapshot($this->createTestJwks(), 1700000000);
         
@@ -333,7 +336,7 @@ class MongoDBSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function multiple_snapshots_independent_documents(): void
+    public function test_multiple_snapshots_independent_documents(): void
     {
         $features = $this->createTestFeatures();
         $jwks = $this->createTestJwks();

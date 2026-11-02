@@ -2,6 +2,7 @@
 
 namespace Toggly\FeatureManagement\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Toggly\FeatureManagement\Contracts\FeatureProviderInterface;
 use Toggly\FeatureManagement\Contracts\SecureFeatureProviderInterface;
@@ -55,6 +56,7 @@ class FilterParityFixturesTest extends TestCase
     /**
      * @dataProvider goldenFixtureProvider
      */
+    #[DataProvider('goldenFixtureProvider')]
     public function testGoldenFixture(string $fixtureId, array $root): void
     {
         $manager = $this->createFeatureManager();

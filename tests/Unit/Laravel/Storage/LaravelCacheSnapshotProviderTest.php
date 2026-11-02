@@ -110,7 +110,7 @@ class LaravelCacheSnapshotProviderTest extends TestCase
             ->method('forever')
             ->with(
                 'toggly:features:snapshot',
-                $this->isType('array')
+                $this->callback(static function ($value) { return is_array($value); })
             );
 
         $provider->saveSnapshot($features);
@@ -230,7 +230,7 @@ class LaravelCacheSnapshotProviderTest extends TestCase
             ->method('forever')
             ->with(
                 'toggly:jwks:snapshot',
-                $this->isType('array')
+                $this->callback(static function ($value) { return is_array($value); })
             );
 
         $provider->saveJwkSnapshot($jwks, 1234567890);

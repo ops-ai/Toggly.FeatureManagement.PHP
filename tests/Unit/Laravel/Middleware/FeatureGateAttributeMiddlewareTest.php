@@ -394,7 +394,7 @@ class FeatureGateAttributeMiddlewareTest extends TestCase
         $featureManager = $this->createMock(FeatureManager::class);
         $featureManager->expects($this->once())
             ->method('isEnabled')
-            ->with('Alpha', $this->isType('array'))
+            ->with('Alpha', $this->callback(static function ($value) { return is_array($value); }))
             ->willReturn(false);
 
         $middleware = new FeatureGateAttributeMiddleware($featureManager, $usage);

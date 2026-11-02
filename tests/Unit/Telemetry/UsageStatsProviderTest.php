@@ -179,7 +179,7 @@ class UsageStatsProviderTest extends TestCase
         $rebased = $this->createMock(TogglyHttpClient::class);
         $rebased->expects($this->once())
             ->method('post')
-            ->with('api/usage/stats', $this->isType('array'), 1);
+            ->with('api/usage/stats', $this->callback(static function ($value) { return is_array($value); }), 1);
 
         $http = $this->createMock(TogglyHttpClient::class);
         $http->method('getBaseUrl')->willReturn('https://definitions.toggly.io/');

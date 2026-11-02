@@ -486,7 +486,7 @@ class WebSocketClient
             return null;
         }
 
-        $scheme = str_starts_with($url, 'wss://') ? 'wss' : 'ws';
+        $scheme = strpos($url, 'wss://') === 0 ? 'wss' : 'ws';
         $port   = $parts['port'] ?? ($scheme === 'wss' ? 443 : 80);
         $path   = $parts['path'] ?? '/';
         if (isset($parts['query'])) {
@@ -516,11 +516,12 @@ class WebSocketClient
             return true;
         }
 
-        // Swoole / OpenSwoole / RoadRunner / FrankenPHP expose custom SAPIs
-        if (str_contains($sapi, 'swoole')
-            || str_contains($sapi, 'openswoole')
-            || str_contains($sapi, 'roadrunner')
-            || str_contains($sapi, 'frankenphp')
+        // Swoole / OpenSwoole / RoadRunner / FrankenPHP expose custom SAPIs.
+        // Check openswoole before swoole so the more specific token remains reachable.
+        if (strpos($sapi, 'openswoole') !== false
+            || strpos($sapi, 'swoole') !== false
+            || strpos($sapi, 'roadrunner') !== false
+            || strpos($sapi, 'frankenphp') !== false
         ) {
             return true;
         }

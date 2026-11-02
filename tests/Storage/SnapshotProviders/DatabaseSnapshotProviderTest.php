@@ -15,7 +15,7 @@ use Toggly\FeatureManagement\Storage\SnapshotSettings;
 class DatabaseSnapshotProviderTest extends TestCase
 {
     #[Test]
-    public function it_persists_and_replaces_a_feature_snapshot_without_losing_signed_metadata(): void
+    public function test_it_persists_and_replaces_a_feature_snapshot_without_losing_signed_metadata(): void
     {
         $provider = $this->provider();
 
@@ -47,7 +47,7 @@ class DatabaseSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_an_empty_snapshot_contract_when_no_feature_snapshot_exists(): void
+    public function test_it_returns_an_empty_snapshot_contract_when_no_feature_snapshot_exists(): void
     {
         $snapshot = $this->provider()->getFeaturesSnapshot();
 
@@ -62,7 +62,7 @@ class DatabaseSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function it_recovers_from_an_empty_persisted_feature_payload(): void
+    public function test_it_recovers_from_an_empty_persisted_feature_payload(): void
     {
         $pdo = new SqliteCompatiblePdo();
         $provider = $this->provider($pdo);
@@ -84,7 +84,7 @@ class DatabaseSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function it_persists_jwks_and_clear_removes_both_snapshot_types_using_configured_names(): void
+    public function test_it_persists_jwks_and_clear_removes_both_snapshot_types_using_configured_names(): void
     {
         $pdo = new SqliteCompatiblePdo();
         $provider = $this->provider($pdo, new SnapshotSettings([
@@ -116,7 +116,7 @@ class DatabaseSnapshotProviderTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_no_jwks_when_the_jwk_snapshot_is_missing_or_empty(): void
+    public function test_it_returns_no_jwks_when_the_jwk_snapshot_is_missing_or_empty(): void
     {
         $pdo = new SqliteCompatiblePdo();
         $provider = $this->provider($pdo);
@@ -143,19 +143,20 @@ final class SqliteCompatiblePdo extends PDO
         $this->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     }
 
-    public function exec(string $statement): int|false
+    public function exec($statement)
     {
         $statement = str_replace(' ON UPDATE CURRENT_TIMESTAMP', '', $statement);
 
-        if (str_starts_with($statement, 'ALTER TABLE')) {
+        if (strpos($statement, 'ALTER TABLE') === 0) {
             return 0;
         }
 
         return parent::exec($statement);
     }
 
-    public function prepare(string $query, array $options = []): PDOStatement|false
+    public function prepare($query, $options = null)
     {
+        $options = $options ?? [];
         $query = str_replace('NOW()', 'CURRENT_TIMESTAMP', $query);
         $query = preg_replace(
             '/ON DUPLICATE KEY UPDATE\s+features = VALUES\(features\),\s+signature = VALUES\(signature\),\s+key_id = VALUES\(key_id\),\s+timestamp = VALUES\(timestamp\),\s+signed_defs_json = VALUES\(signed_defs_json\),\s+etag = VALUES\(etag\),\s+updated_at = CURRENT_TIMESTAMP/s',

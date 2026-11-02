@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/13.4/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
          cacheDirectory=".phpunit.cache"
          executionOrder="depends,defects"
-         colors="true">
+         colors="true"
+         resolveDependencies="true">
     <testsuites>
         <!-- Single suite: a nested Unit suite under tests/ would re-run Unit
              tests and break Sonar PHPUnit report import (duplicate measures). -->
@@ -12,17 +13,13 @@
             <directory>tests</directory>
         </testsuite>
     </testsuites>
-    <coverage>
-        <report>
-            <html outputDirectory="coverage"/>
-            <text outputFile="php://stdout"/>
-        </report>
+    <source>
         <include>
             <directory suffix=".php">src</directory>
             <directory suffix=".php">packages/laravel/src</directory>
             <directory suffix=".php">packages/wordpress/src</directory>
         </include>
-    </coverage>
+    </source>
     <php>
         <env name="MONGO_TEST_URI" value="mongodb://localhost:27017"/>
     </php>

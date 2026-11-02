@@ -45,7 +45,7 @@ class FeatureManagerTest extends TestCase
         $usage = $this->createMock(UsageStatsProviderInterface::class);
         $usage->expects($this->once())
             ->method('use')
-            ->with('Checkout', $this->isType('callable'), 'treatment')
+            ->with('Checkout', $this->callback(static function ($value) { return is_callable($value); }), 'treatment')
             ->willReturnCallback(static function (string $featureKey, callable $action, string $variant) {
                 return $action(FeatureUsageScope::noop());
             });

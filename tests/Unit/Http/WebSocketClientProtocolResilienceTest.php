@@ -1,7 +1,7 @@
 <?php
 
 namespace Toggly\FeatureManagement\Http {
-    function stream_socket_client($address, &$errno = null, &$errstr = null, ...$options): mixed
+    function stream_socket_client($address, &$errno = null, &$errstr = null, ...$options)
     {
         if ($address === 'tcp://loopback.test:8080' && array_key_exists('toggly_protocol_test_socket', $GLOBALS)) {
             $errno = 0;
@@ -12,7 +12,7 @@ namespace Toggly\FeatureManagement\Http {
         return \stream_socket_client($address, $errno, $errstr, ...$options);
     }
 
-    function fgets($stream, ...$options): string|false
+    function fgets($stream, ...$options)
     {
         if ($stream === ($GLOBALS['toggly_protocol_test_socket'] ?? null)
             && array_key_exists('toggly_protocol_test_handshake_lines', $GLOBALS)) {
@@ -20,6 +20,15 @@ namespace Toggly\FeatureManagement\Http {
         }
 
         return \fgets($stream, ...$options);
+    }
+
+    function php_sapi_name()
+    {
+        if (array_key_exists('toggly_protocol_test_sapi', $GLOBALS)) {
+            return $GLOBALS['toggly_protocol_test_sapi'];
+        }
+
+        return \php_sapi_name();
     }
 }
 
@@ -34,12 +43,20 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
 
     protected function setUp(): void
     {
-        unset($GLOBALS['toggly_protocol_test_socket'], $GLOBALS['toggly_protocol_test_handshake_lines']);
+        unset(
+            $GLOBALS['toggly_protocol_test_socket'],
+            $GLOBALS['toggly_protocol_test_handshake_lines'],
+            $GLOBALS['toggly_protocol_test_sapi']
+        );
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['toggly_protocol_test_socket'], $GLOBALS['toggly_protocol_test_handshake_lines']);
+        unset(
+            $GLOBALS['toggly_protocol_test_socket'],
+            $GLOBALS['toggly_protocol_test_handshake_lines'],
+            $GLOBALS['toggly_protocol_test_sapi']
+        );
         foreach ($this->testSockets as $socket) {
             if (is_resource($socket)) {
                 fclose($socket);
@@ -47,6 +64,34 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
         }
         $this->testSockets = [];
         parent::tearDown();
+    }
+
+    public function testLongRunningSapiTokensAreDetectedWithoutChangingCliDefault(): void
+    {
+        foreach (['openswoole', 'swoole', 'roadrunner', 'frankenphp'] as $sapi) {
+            $GLOBALS['toggly_protocol_test_sapi'] = $sapi;
+            self::assertTrue(
+                $this->callStatic(WebSocketClient::class, 'isLongRunningProcess'),
+                "expected long-running detection for SAPI {$sapi}"
+            );
+        }
+
+        $GLOBALS['toggly_protocol_test_sapi'] = 'fpm-fcgi';
+        self::assertFalse($this->callStatic(WebSocketClient::class, 'isLongRunningProcess'));
+    }
+
+    public function testParseWsUrlKeepsSecureAndInsecureSchemes(): void
+    {
+        $client = new WebSocketClient();
+
+        self::assertSame(
+            ['scheme' => 'wss', 'host' => 'live.example.test', 'port' => 443, 'path' => '/ws'],
+            $this->call($client, 'parseWsUrl', 'wss://live.example.test/ws')
+        );
+        self::assertSame(
+            ['scheme' => 'ws', 'host' => 'live.example.test', 'port' => 80, 'path' => '/ws'],
+            $this->call($client, 'parseWsUrl', 'ws://live.example.test/ws')
+        );
     }
 
     public function testNativeConnectionsForwardContextAndErrorReferencesOutsideTheFixture(): void
@@ -309,19 +354,35 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
         return $payload;
     }
 
-    private function call(WebSocketClient $client, string $method, mixed ...$arguments): mixed
+    private function call(WebSocketClient $client, string $method, ...$arguments)
     {
-        return (new \ReflectionMethod($client, $method))->invoke($client, ...$arguments);
+        $reflection = new \ReflectionMethod($client, $method);
+        $reflection->setAccessible(true);
+
+        return $reflection->invoke($client, ...$arguments);
     }
 
-    private function set(WebSocketClient $client, string $property, mixed $value): void
+    private function callStatic(string $class, string $method, ...$arguments)
     {
-        (new \ReflectionProperty($client, $property))->setValue($client, $value);
+        $reflection = new \ReflectionMethod($class, $method);
+        $reflection->setAccessible(true);
+
+        return $reflection->invoke(null, ...$arguments);
     }
 
-    private function get(WebSocketClient $client, string $property): mixed
+    private function set(WebSocketClient $client, string $property, $value): void
     {
-        return (new \ReflectionProperty($client, $property))->getValue($client);
+        $reflection = new \ReflectionProperty($client, $property);
+        $reflection->setAccessible(true);
+        $reflection->setValue($client, $value);
+    }
+
+    private function get(WebSocketClient $client, string $property)
+    {
+        $reflection = new \ReflectionProperty($client, $property);
+        $reflection->setAccessible(true);
+
+        return $reflection->getValue($client);
     }
 }
 }

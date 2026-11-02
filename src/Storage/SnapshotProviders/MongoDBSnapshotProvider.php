@@ -27,12 +27,14 @@ class MongoDBSnapshotProvider implements FeatureSnapshotProviderInterface
      * @param string $jwksId Document ID for JWKs
      */
     public function __construct(
-        Client|Collection $mongoClientOrCollection,
+        $mongoClientOrCollection,
         string $databaseName = 'toggly',
         string $collectionName = 'snapshots',
         string $definitionsId = 'toggly_features',
         string $jwksId = 'toggly_jwks'
     ) {
+        // Avoid a native union type so this optional provider still parses on php ^7.4.
+        // Accepted values remain MongoDB\Client|MongoDB\Collection (see docblock).
         if ($mongoClientOrCollection instanceof Collection) {
             $this->collection = $mongoClientOrCollection;
         } else {

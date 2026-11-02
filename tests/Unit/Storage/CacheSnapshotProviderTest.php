@@ -13,7 +13,8 @@ use Toggly\FeatureManagement\Storage\SnapshotSettings;
 
 final class CacheSnapshotProviderTest extends TestCase
 {
-    private CacheInterface&MockObject $cache;
+    /** @var CacheInterface&MockObject */
+    private $cache;
 
     protected function setUp(): void
     {
@@ -27,7 +28,7 @@ final class CacheSnapshotProviderTest extends TestCase
         $stored = [];
         $this->cache->expects($this->once())
             ->method('set')
-            ->with('custom-features', $this->isType('array'), 120)
+            ->with('custom-features', $this->callback(static function ($value) { return is_array($value); }), 120)
             ->willReturnCallback(function (string $key, array $value, int $ttl) use (&$stored): bool {
                 $stored[$key] = $value;
 
@@ -122,7 +123,7 @@ final class CacheSnapshotProviderTest extends TestCase
         $stored = [];
         $this->cache->expects($this->once())
             ->method('set')
-            ->with('custom-jwks', $this->isType('array'), 90)
+            ->with('custom-jwks', $this->callback(static function ($value) { return is_array($value); }), 90)
             ->willReturnCallback(function (string $key, array $value, int $ttl) use (&$stored): bool {
                 $stored[$key] = $value;
 

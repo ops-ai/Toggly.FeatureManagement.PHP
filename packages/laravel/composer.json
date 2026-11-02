@@ -29,9 +29,9 @@
         "toggly/feature-management-php": "^1.0"
     },
     "suggest": {
-        "illuminate/support": "Laravel support package (^10.0|^11.0|^12.0|^13.0)",
-        "illuminate/http": "Laravel HTTP integration (^10.0|^11.0|^12.0|^13.0)",
-        "illuminate/cache": "Laravel cache storage provider (^10.0|^11.0|^12.0|^13.0)"
+        "illuminate/support": "Laravel support package (^12.0|^13.0)",
+        "illuminate/http": "Laravel HTTP integration (^12.0|^13.0)",
+        "illuminate/cache": "Laravel cache storage provider (^12.0|^13.0)"
     },
     "autoload": {
         "psr-4": {

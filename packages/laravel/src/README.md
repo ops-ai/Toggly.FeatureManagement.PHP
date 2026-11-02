@@ -13,13 +13,13 @@ Manual `config/app.php` registration is only needed if auto-discovery is disable
 
 ## Supported hosts
 
-The package retains its Laravel 8.0+ integration floor and PHP 7.4 package
-floor. Laravel 8/9 applications continue to use the existing setup.
-Current packed-package host coverage uses Laravel 10.3.3, 11.6.1, 12.12.2,
-and 13.10.1. Laravel 12 supports PHP 8.2–8.5; Laravel 13 requires PHP 8.3
-or later. Provide PSR-18 client and request-factory bindings in the Laravel
-container before resolving `FeatureManager`, as shown in the configuration
-examples below.
+Supported Laravel majors are **12** and **13** (packed-package host coverage
+uses Laravel 12.12.2 and 13.10.1). Laravel 10 and 11 are no longer supported
+(Packagist blocks every `laravel/framework` 10.x/11.x release via advisory
+`PKSA-b41t-wbzk-9q51`). Laravel 12 supports PHP 8.2–8.5; Laravel 13 requires
+PHP 8.3 or later. The PHP package floor remains 7.4. Provide PSR-18 client and
+request-factory bindings in the Laravel container before resolving
+`FeatureManager`, as shown in the configuration examples below.
 
 ## Configuration
 
@@ -39,7 +39,7 @@ TOGGLY_SNAPSHOT_PROVIDER=cache
 # Optional: omit TOGGLY_CACHE_STORE to use Laravel's default cache store
 ```
 
-3. **Register middleware** in `bootstrap/app.php` (Laravel 11+) or `app/Http/Kernel.php`:
+3. **Register middleware** in `bootstrap/app.php` (Laravel 12+) or `app/Http/Kernel.php`:
 
 ```php
 protected $routeMiddleware = [
@@ -48,10 +48,10 @@ protected $routeMiddleware = [
 ];
 ```
 
-5. **Schedule tasks** in `app/Console/Kernel.php` (or `routes/console.php` on
-   Laravel 11+). PHP has no in-process minute timer by default — periodic
-   flush stays host-driven. `UsageStatsProvider` / `MetricsService` also
-   register a best-effort `register_shutdown_function` flush.
+5. **Schedule tasks** in `routes/console.php` (or `app/Console/Kernel.php` on
+   older app skeletons). PHP has no in-process minute timer by default —
+   periodic flush stays host-driven. `UsageStatsProvider` / `MetricsService`
+   also register a best-effort `register_shutdown_function` flush.
 
 ```php
 protected function schedule(Schedule $schedule)

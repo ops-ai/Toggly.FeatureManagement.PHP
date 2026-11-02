@@ -8,6 +8,7 @@ use Toggly\FeatureManagement\Config\TogglySettings;
 use Toggly\FeatureManagement\Contracts\FeatureContextProviderInterface;
 use Toggly\FeatureManagement\Contracts\FeatureSnapshotProviderInterface;
 use Toggly\FeatureManagement\Contracts\FeatureStateServiceInterface;
+use Toggly\FeatureManagement\Contracts\UsageStatsProviderInterface;
 use Toggly\FeatureManagement\Core\FeatureManager;
 use Toggly\FeatureManagement\Core\FeatureProvider;
 use Toggly\FeatureManagement\Core\FeatureStateService;
@@ -107,6 +108,10 @@ class ServiceProvider extends BaseServiceProvider
 
             return new UsageStatsProvider($settings, $httpClient, $contextProvider, $logger);
         });
+        $this->app->singleton(
+            UsageStatsProviderInterface::class,
+            fn ($app) => $app->make(UsageStatsProvider::class)
+        );
 
         // Register metrics service
         $this->app->singleton(MetricsService::class, function ($app) {

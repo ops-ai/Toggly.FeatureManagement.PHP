@@ -164,9 +164,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - laravel-version: '10.3.3'
+            php-version: '8.2'
+          - laravel-version: '11.6.1'
+            php-version: '8.3'
           - laravel-version: '12.12.2'
             php-version: '8.5'
-          - laravel-version: '13.10.1'
+          - laravel-version: '13.11.0'
             php-version: '8.5'
 
     steps:
@@ -193,8 +197,10 @@ jobs:
           set -euo pipefail
           artifacts="$RUNNER_TEMP/toggly-php-artifacts"
           host="$RUNNER_TEMP/laravel-${{ matrix.laravel-version }}"
-          # Supported hosts are Laravel 12/13 only. Do not acknowledge or ignore
-          # Composer security advisories for these hosts.
+          # Composer policy is project-local. Materialize retained Laravel 10/11
+          # hosts without resolving them, then write only that temporary fixture's
+          # documented advisory acknowledgements before installation. Laravel
+          # 12/13 hosts need no acknowledgements at current patch levels.
           composer create-project --no-install --no-scripts --no-interaction --prefer-dist \
             laravel/laravel "$host" "v${{ matrix.laravel-version }}"
           php tests/HostFixtures/configure-laravel-policy.php "$host" "${{ matrix.laravel-version }}"
@@ -567,7 +573,7 @@ jobs:
           echo "- PHP 8.5" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Current framework hosts" >> $GITHUB_STEP_SUMMARY
-          echo "- Laravel 12.12.2 and 13.10.1 from packed artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Laravel 10.3.3, 11.6.1, 12.12.2, and 13.11.0 from packed artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- WordPress 7.1 plugin activation from a packed artifact on PHP 8.5" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Packages Tested" >> $GITHUB_STEP_SUMMARY

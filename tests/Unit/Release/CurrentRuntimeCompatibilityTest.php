@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use Toggly\FeatureManagement\SdkIdentity;
 
 /**
- * Contract checks for the current PHP framework support matrix.
+ * Contract checks for the retained and current PHP framework support matrix.
  */
 class CurrentRuntimeCompatibilityTest extends TestCase
 {
@@ -23,20 +23,20 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         }
     }
 
-    public function testLaravelPackageDocumentsCurrentHostMajorsOnly(): void
+    public function testLaravelPackageDocumentsRetainedAndCurrentHostMajors(): void
     {
         $json = $this->readJson('packages/laravel/composer.json');
 
         $this->assertSame(
-            'Laravel support package (^12.0|^13.0)',
+            'Laravel support package (^10.0|^11.0|^12.0|^13.0)',
             $json['suggest']['illuminate/support']
         );
         $this->assertSame(
-            'Laravel HTTP integration (^12.0|^13.0)',
+            'Laravel HTTP integration (^10.0|^11.0|^12.0|^13.0)',
             $json['suggest']['illuminate/http']
         );
         $this->assertSame(
-            'Laravel cache storage provider (^12.0|^13.0)',
+            'Laravel cache storage provider (^10.0|^11.0|^12.0|^13.0)',
             $json['suggest']['illuminate/cache']
         );
     }
@@ -47,29 +47,48 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $releaseWorkflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/release.yml');
 
         $this->assertStringContainsString("'8.5'", $workflow);
+        $this->assertStringContainsString("laravel-version: '10.3.3'", $workflow);
+        $this->assertStringContainsString("laravel-version: '11.6.1'", $workflow);
         $this->assertStringContainsString("laravel-version: '12.12.2'", $workflow);
-        $this->assertStringContainsString("laravel-version: '13.10.1'", $workflow);
-        $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);
-        $this->assertStringNotContainsString("laravel-version: '11.6.1'", $workflow);
+        $this->assertStringContainsString("laravel-version: '13.11.0'", $workflow);
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
         $this->assertStringContainsString('repositories.toggly artifact', $workflow);
+        $this->assertStringContainsString('laravel-bootstrap.php', $workflow);
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
     }
 
-    public function testLaravelHostJobsDoNotIgnoreSecurityAdvisoriesAndWordPressWaitsForMysql(): void
+    public function testRetainedHostFixturesUseScopedComposerAcknowledgementsAndWaitForMysql(): void
     {
         $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
         $policyFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/configure-laravel-policy.php');
+        $bootstrapFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/laravel-bootstrap.php');
+
+        foreach ([
+            'PKSA-b41t-wbzk-9q51',
+            'PKSA-m5cs-t1y6-qpcs',
+            'PKSA-3r5d-mb8f-1qw9',
+            'PKSA-mdq4-51ck-6kdq',
+            'PKSA-8qx3-n5y5-vvnd',
+            'PKSA-q46n-4fdk-zjr4',
+            'PKSA-qzrn-rnz3-85w1',
+            'PKSA-d5tc-s1qs-h781',
+        ] as $advisoryId) {
+            $this->assertStringContainsString($advisoryId, $policyFixture);
+        }
 
         $this->assertStringContainsString('create-project --no-install --no-scripts', $workflow);
         $this->assertStringContainsString('configure-laravel-policy.php', $workflow);
-        $this->assertStringContainsString('PKSA-b41t-wbzk-9q51', $policyFixture);
-        $this->assertStringNotContainsString('ignore-id', $policyFixture);
-        $this->assertStringNotContainsString("'10.3.3' =>", $policyFixture);
-        $this->assertStringNotContainsString("'11.6.1' =>", $policyFixture);
+        $this->assertStringContainsString("'on-audit' => false", $policyFixture);
+        $this->assertStringContainsString("'10.3.3' =>", $policyFixture);
+        $this->assertStringContainsString("'11.6.1' =>", $policyFixture);
         $this->assertStringNotContainsString('--no-blocking', $workflow);
         $this->assertStringNotContainsString('--no-security-blocking', $workflow);
-        $this->assertStringNotContainsString('advisories.block', $workflow);
+
+        $this->assertStringContainsString('MockHandler', $bootstrapFixture);
+        $this->assertStringContainsString('Toggly::isEnabled', $bootstrapFixture);
+        $this->assertStringContainsString('FeatureGateMiddleware', $bootstrapFixture);
+        $this->assertStringContainsString('@feature', $bootstrapFixture);
+        $this->assertStringContainsString('refreshFeatures', $bootstrapFixture);
 
         $mysqlReady = strpos($workflow, '@mysqli_connect("127.0.0.1", "root", "root", "wordpress")');
         $wordpressInstall = strpos($workflow, 'wp core install --path="$wordpress"');
@@ -90,9 +109,41 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringContainsString("ports:\n          - 3306:3306", $wordpressService);
     }
 
-    public function testConfigureLaravelPolicyIsANoOpForSupportedHosts(): void
+    public function testRetainedLaravelPoliciesAcknowledgeAdvisoriesWithoutHidingThemFromAudit(): void
     {
-        foreach (['12.12.2', '13.10.1'] as $laravelVersion) {
+        foreach (['10.3.3', '11.6.1'] as $laravelVersion) {
+            $hostDirectory = sys_get_temp_dir() . '/toggly-laravel-policy-' . bin2hex(random_bytes(8));
+            mkdir($hostDirectory);
+            $manifestPath = $hostDirectory . '/composer.json';
+            file_put_contents($manifestPath, "{}\n");
+
+            try {
+                $command = sprintf(
+                    '%s %s %s %s',
+                    escapeshellarg(PHP_BINARY),
+                    escapeshellarg($this->repoRoot() . '/tests/HostFixtures/configure-laravel-policy.php'),
+                    escapeshellarg($hostDirectory),
+                    escapeshellarg($laravelVersion)
+                );
+                exec($command, $output, $exitCode);
+
+                $this->assertSame(0, $exitCode, implode("\n", $output));
+
+                $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+                $acknowledgement = $manifest['config']['policy']['advisories']['ignore-id']['PKSA-b41t-wbzk-9q51'];
+
+                $this->assertFalse($acknowledgement['on-audit']);
+                $this->assertStringContainsString("Retained Laravel {$laravelVersion} fixture", $acknowledgement['reason']);
+            } finally {
+                unlink($manifestPath);
+                rmdir($hostDirectory);
+            }
+        }
+    }
+
+    public function testConfigureLaravelPolicyIsANoOpForCurrentUnaffectedHosts(): void
+    {
+        foreach (['12.12.2', '13.11.0'] as $laravelVersion) {
             $hostDirectory = sys_get_temp_dir() . '/toggly-laravel-policy-' . bin2hex(random_bytes(8));
             mkdir($hostDirectory);
             $manifestPath = $hostDirectory . '/composer.json';

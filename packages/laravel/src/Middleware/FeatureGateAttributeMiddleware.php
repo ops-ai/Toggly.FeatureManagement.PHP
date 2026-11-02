@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 use Toggly\FeatureManagement\Contracts\UsageStatsProviderInterface;
 use Toggly\FeatureManagement\Core\FeatureManager;
+use Toggly\FeatureManagement\Core\UsageStatsProvider;
 use Toggly\Laravel\Attributes\FeatureGate as FeatureGateAttribute;
 use Toggly\Laravel\Attributes\FeatureUsage as FeatureUsageAttribute;
 
@@ -37,58 +38,66 @@ class FeatureGateAttributeMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $route = $request->route();
-
-        if (!$route) {
+        $controllerTarget = $this->resolveControllerTarget($request);
+        if ($controllerTarget === null) {
             return $next($request);
         }
 
-        $action = $route->getAction();
-        $controller = $action['controller'] ?? null;
-
-        if (!$controller || !is_string($controller)) {
-            return $next($request);
-        }
-
-        [$controllerClass, $methodName] = explode('@', $controller, 2);
-
-        if (!class_exists($controllerClass)) {
-            return $next($request);
-        }
-
-        $reflection = new ReflectionClass($controllerClass);
-
-        // Check controller-level attributes
-        $controllerAttributes = $reflection->getAttributes(FeatureGateAttribute::class);
-        foreach ($controllerAttributes as $attribute) {
-            $featureGate = $attribute->newInstance();
-            if (!$this->checkFeatureGate($featureGate, $request)) {
-                return $this->handleDisabledFeature($featureGate, $request);
-            }
-        }
-
-        // Check method-level attributes
-        if ($reflection->hasMethod($methodName)) {
-            $method = $reflection->getMethod($methodName);
-            $methodAttributes = $method->getAttributes(FeatureGateAttribute::class);
-
-            foreach ($methodAttributes as $attribute) {
-                $featureGate = $attribute->newInstance();
-                if (!$this->checkFeatureGate($featureGate, $request)) {
-                    return $this->handleDisabledFeature($featureGate, $request);
-                }
-            }
+        [$reflection, $methodName] = $controllerTarget;
+        $disabledGate = $this->findDisabledFeatureGate($reflection, $methodName, $request);
+        if ($disabledGate !== null) {
+            return $this->handleDisabledFeature($disabledGate, $request);
         }
 
         $usageFeatures = $this->collectUsageFeatures($reflection, $methodName);
 
-        if ($usageFeatures === []) {
-            return $next($request);
+        return $usageFeatures === []
+            ? $next($request)
+            : $this->runWithFeatureUsage($usageFeatures, static function () use ($next, $request) {
+                return $next($request);
+            });
+    }
+
+    /**
+     * @return array{0: ReflectionClass, 1: string}|null
+     */
+    private function resolveControllerTarget(Request $request): ?array
+    {
+        $route = $request->route();
+        $controller = $route ? ($route->getAction()['controller'] ?? null) : null;
+        if (!$controller || !is_string($controller)) {
+            return null;
         }
 
-        return $this->runWithFeatureUsage($usageFeatures, static function () use ($next, $request) {
-            return $next($request);
-        });
+        [$controllerClass, $methodName] = explode('@', $controller, 2);
+        if (!class_exists($controllerClass)) {
+            return null;
+        }
+
+        return [new ReflectionClass($controllerClass), $methodName];
+    }
+
+    private function findDisabledFeatureGate(
+        ReflectionClass $reflection,
+        string $methodName,
+        Request $request
+    ): ?FeatureGateAttribute {
+        $attributes = $reflection->getAttributes(FeatureGateAttribute::class);
+        if ($reflection->hasMethod($methodName)) {
+            $attributes = array_merge(
+                $attributes,
+                $reflection->getMethod($methodName)->getAttributes(FeatureGateAttribute::class)
+            );
+        }
+
+        foreach ($attributes as $attribute) {
+            $featureGate = $attribute->newInstance();
+            if (!$this->checkFeatureGate($featureGate, $request)) {
+                return $featureGate;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -141,6 +150,18 @@ class FeatureGateAttributeMiddleware
             return $action();
         }
 
+        return $this->executeWithUsageScopes($usageStats, $features, $action);
+    }
+
+    /**
+     * @param list<string> $features
+     * @param callable(): Response $action
+     */
+    private function executeWithUsageScopes(
+        UsageStatsProviderInterface $usageStats,
+        array $features,
+        callable $action
+    ): Response {
         $scopes = [];
         foreach ($features as $feature) {
             $scopes[] = $usageStats->beginUsage($feature);
@@ -169,25 +190,30 @@ class FeatureGateAttributeMiddleware
 
     private function resolveUsageStatsProvider(): ?UsageStatsProviderInterface
     {
-        if ($this->usageStatsProvider !== null) {
-            return $this->usageStatsProvider;
-        }
+        return $this->usageStatsProvider ?? $this->usageStatsProviderFromContainer();
+    }
+
+    private function usageStatsProviderFromContainer(): ?UsageStatsProviderInterface
+    {
+        $provider = null;
 
         if (function_exists('app')) {
             try {
                 $app = app();
-                if (method_exists($app, 'bound') && $app->bound(UsageStatsProviderInterface::class)) {
-                    return $app->make(UsageStatsProviderInterface::class);
-                }
-                if (method_exists($app, 'bound') && $app->bound(\Toggly\FeatureManagement\Core\UsageStatsProvider::class)) {
-                    return $app->make(\Toggly\FeatureManagement\Core\UsageStatsProvider::class);
+                if (method_exists($app, 'bound')) {
+                    foreach ([UsageStatsProviderInterface::class, UsageStatsProvider::class] as $abstract) {
+                        if ($app->bound($abstract)) {
+                            $provider = $app->make($abstract);
+                            break;
+                        }
+                    }
                 }
             } catch (Throwable $e) {
-                return null;
+                $provider = null;
             }
         }
 
-        return null;
+        return $provider;
     }
 
     /**
@@ -197,25 +223,26 @@ class FeatureGateAttributeMiddleware
     {
         $context = $this->buildContext($request);
         $features = $featureGate->getFeatures();
-        $requirement = $featureGate->requirement;
+        $allowed = false;
 
-        if ($requirement === 'All') {
-            // All features must be enabled
+        if ($featureGate->requirement === 'All') {
+            $allowed = true;
             foreach ($features as $feature) {
                 if (!$this->featureManager->isEnabled($feature, $context)) {
-                    return false;
+                    $allowed = false;
+                    break;
                 }
             }
-            return true;
         } else {
-            // Any feature must be enabled
             foreach ($features as $feature) {
                 if ($this->featureManager->isEnabled($feature, $context)) {
-                    return true;
+                    $allowed = true;
+                    break;
                 }
             }
-            return false;
         }
+
+        return $allowed;
     }
 
     /**
@@ -242,7 +269,6 @@ class FeatureGateAttributeMiddleware
             $context['userId'] = $request->user()->id;
             $context['user_id'] = $request->user()->id;
 
-            // Add groups if available
             if (method_exists($request->user(), 'groups')) {
                 $context['groups'] = $request->user()->groups();
             }

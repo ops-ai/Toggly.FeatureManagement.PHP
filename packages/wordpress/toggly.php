@@ -20,12 +20,13 @@ if (!defined('ABSPATH')) {
 
 // PHP 7.4 polyfills for published core builds that still call PHP 8.0 string
 // helpers on the live-update path after definition refresh. No-ops on PHP 8+.
+// Names must match PHP's builtins (underscores); suppress php:S100.
 if (!function_exists('str_starts_with')) {
     /**
      * @param mixed $haystack
      * @param mixed $needle
      */
-    function str_starts_with($haystack, $needle): bool
+    function str_starts_with($haystack, $needle): bool // NOSONAR
     {
         $haystack = (string) $haystack;
         $needle = (string) $needle;
@@ -39,7 +40,7 @@ if (!function_exists('str_contains')) {
      * @param mixed $haystack
      * @param mixed $needle
      */
-    function str_contains($haystack, $needle): bool
+    function str_contains($haystack, $needle): bool // NOSONAR
     {
         $haystack = (string) $haystack;
         $needle = (string) $needle;
@@ -53,7 +54,7 @@ if (!function_exists('str_ends_with')) {
      * @param mixed $haystack
      * @param mixed $needle
      */
-    function str_ends_with($haystack, $needle): bool
+    function str_ends_with($haystack, $needle): bool // NOSONAR
     {
         $haystack = (string) $haystack;
         $needle = (string) $needle;

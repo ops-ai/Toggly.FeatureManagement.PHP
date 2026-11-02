@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration, errors) instead of a redundant `isEnabled()` check that only
   double-counted `checkCount`.
 
+## [1.3.2] - 2026-11-02
+
+### Fixed
+- Restore PHP 7.4 parseability on the live-update WebSocket path by replacing
+  PHP 8.0 `str_starts_with` / `str_contains` helpers with `strpos` checks in
+  `FeatureProvider` and `WebSocketClient`.
+- Avoid a native constructor union type on `MongoDBSnapshotProvider` so the
+  optional MongoDB snapshot adapter still parses on PHP ^7.4.
+
 ## [1.3.1] - 2026-10-23
 
 ### Fixed

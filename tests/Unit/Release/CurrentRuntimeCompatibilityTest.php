@@ -53,7 +53,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '11.6.1'", $workflow);
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
+        $this->assertStringContainsString('composer archive --format=zip', $workflow);
         $this->assertStringContainsString('repositories.toggly artifact', $workflow);
+        $this->assertStringContainsString(
+            'sonar.coverage.exclusions=**/Telemetry/Pb/**,**/GPBMetadata/**,packages/wordpress/toggly.php',
+            $workflow
+        );
         $this->assertStringContainsString('laravel-bootstrap.php', $workflow);
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
     }
@@ -99,17 +104,33 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertNotFalse($wordpressInstall);
         $this->assertLessThan($wordpressInstall, $mysqlReady);
 
-        $wordpressJob = strstr($workflow, '  wordpress-host:');
+        $wordpressJob = strstr($workflow, '  wordpress-hosts:');
         $this->assertNotFalse($wordpressJob);
+        $this->assertStringContainsString("wordpress-version: '5.0'", $wordpressJob);
+        $this->assertStringContainsString("php-version: '7.4'", $wordpressJob);
+        $this->assertStringContainsString("wordpress-version: '7.1.4'", $wordpressJob);
+        $this->assertStringContainsString("php-version: '8.5'", $wordpressJob);
+        $this->assertStringContainsString('wordpress-mock-definitions-server.php', $wordpressJob);
+        $this->assertStringContainsString('wordpress-flag-evaluation.php', $wordpressJob);
         $this->assertStringContainsString("MYSQL_ROOT_HOST: '%'", $wordpressJob);
         $this->assertStringNotContainsString('MYSQL_ALLOW_EMPTY_PASSWORD', $wordpressJob);
         $this->assertStringNotContainsString('MYSQL_USER:', $wordpressJob);
+        $this->assertStringNotContainsString('  wordpress-host:', $workflow);
 
         $wordpressService = strstr($wordpressJob, '      mysql:');
         $this->assertNotFalse($wordpressService);
         $wordpressService = strstr($wordpressService, "\n\n    steps:", true);
         $this->assertNotFalse($wordpressService);
         $this->assertStringContainsString("ports:\n          - 3306:3306", $wordpressService);
+    }
+
+    public function testWordpressPluginHeaderDeclaresProvenSupportFloors(): void
+    {
+        $pluginHeader = (string) file_get_contents($this->repoRoot() . '/packages/wordpress/toggly.php');
+
+        $this->assertStringContainsString('* Requires at least: 5.0', $pluginHeader);
+        $this->assertStringContainsString('* Tested up to: 7.1', $pluginHeader);
+        $this->assertStringContainsString('* Requires PHP: 7.4', $pluginHeader);
     }
 
     public function testConfigureLaravelPolicyIsANoOpForSupportedHosts(): void

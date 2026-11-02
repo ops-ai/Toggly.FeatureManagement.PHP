@@ -1,0 +1,37 @@
+[
+  {
+    "featureKey": "premium-content",
+    "filters": [
+      {
+        "name": "AlwaysOn"
+      }
+    ],
+    "metrics": [
+      "view"
+    ]
+  },
+  {
+    "featureKey": "checkout-v2",
+    "filters": [
+      {
+        "name": "AlwaysOff"
+      }
+    ]
+  },
+  {
+    "featureKey": "empty-filters",
+    "filters": []
+  },
+  {
+    "featureKey": "targeting-beta",
+    "filters": [
+      {
+        "name": "Targeting",
+        "parameters": {
+          "Audience.DefaultRolloutPercentage": 0,
+          "Audience.Users:0": "wp-ci-user"
+        }
+      }
+    ]
+  }
+]

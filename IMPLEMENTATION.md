@@ -132,8 +132,9 @@ The library is organized into three main parts:
   12.12.2 and 13.11.0. Laravel 10 and 11 are not supported.
 
 ### WordPress
-- WordPress 5.0+; the maintained package host check activates the plugin on
-  WordPress 7.1 with PHP 8.5.
+- WordPress 5.0+ (`Requires at least: 5.0`, `Tested up to: 7.1`,
+  `Requires PHP: 7.4`); CI host checks exercise WordPress 5.0/PHP 7.4 and
+  WordPress 7.1.4/PHP 8.5 with mocked definitions flag evaluation.
 - No external dependencies (uses WordPress APIs)
 
 ## Testing Status

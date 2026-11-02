@@ -106,9 +106,12 @@ When logged in as an administrator, you'll see a "Toggly" menu in the admin bar 
 
 ## Requirements
 
-- WordPress 5.0 or higher. The maintained plugin host is validated on
-  WordPress 7.1 with PHP 8.5.
-- PHP 7.4 or higher; the package declares support through PHP 8.5.
+- WordPress 5.0 or higher (`Requires at least: 5.0`; `Tested up to: 7.1`).
+  CI exercises the floor (WordPress 5.0 on PHP 7.4) and latest stable
+  WordPress 7.1.x on PHP 8.5, including flag evaluation against a mocked
+  Toggly definitions API through `toggly_is_enabled()`, `TogglyPlugin::isEnabled()`,
+  and the `[toggly_feature]` shortcode.
+- PHP 7.4 or higher (`Requires PHP: 7.4`); the package declares support through PHP 8.5.
 - Composer (for installation)
 
 ## Support

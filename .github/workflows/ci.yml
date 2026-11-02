@@ -205,12 +205,22 @@ jobs:
             "toggly/laravel:${laravel_package_version}"
           php tests/HostFixtures/laravel-bootstrap.php "$host"
 
-  wordpress-host:
-    name: WordPress 7.1 on PHP 8.5
+  wordpress-hosts:
+    name: WordPress ${{ matrix.wordpress-version }} on PHP ${{ matrix.php-version }}
     needs: [commits-since-last-run]
     if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.commits-since-last-run.outputs.should_run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Floor: oldest WordPress proven with the core PHP floor (^7.4).
+          - wordpress-version: '5.0'
+            php-version: '7.4'
+          # Latest stable WordPress 7.1.x verified 2026-11-02 (7.1.4).
+          - wordpress-version: '7.1.4'
+            php-version: '8.5'
     services:
       mysql:
         image: mysql:8.0
@@ -233,7 +243,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: ${{ matrix.php-version }}
           tools: composer:v2, wp-cli
           extensions: mbstring, xml, ctype, json, openssl, curl, mysqli
 
@@ -255,15 +265,20 @@ jobs:
           set -euo pipefail
           artifacts="$RUNNER_TEMP/toggly-php-artifacts"
           mkdir -p "$artifacts"
+          # Archive packaging is platform-agnostic; use the matrix PHP so plugin
+          # Composer resolution below matches the host runtime floor/latest.
           composer archive --format=tar --dir="$artifacts" --file=feature-management-php
           composer --working-dir=packages/wordpress archive --format=tar --dir="$artifacts" --file=wordpress
 
-      - name: Install and activate the packed plugin in WordPress
+      - name: Install, activate, and evaluate flags in WordPress
         run: |
           set -euo pipefail
           artifacts="$RUNNER_TEMP/toggly-php-artifacts"
           wordpress="$RUNNER_TEMP/wordpress"
-          wp core download --path="$wordpress" --version=7.1 --skip-content
+          mock_log="$RUNNER_TEMP/toggly-mock-definitions.log"
+          mock_port_file="$RUNNER_TEMP/toggly-mock-port"
+
+          wp core download --path="$wordpress" --version="${{ matrix.wordpress-version }}" --skip-content
           wp config create --path="$wordpress" --dbname=wordpress --dbuser=root \
             --dbpass=root --dbhost=127.0.0.1 --skip-check
           for attempt in {1..30}; do
@@ -279,19 +294,60 @@ jobs:
           wp core install --path="$wordpress" --url=http://localhost \
             --title='Toggly WordPress Host' --admin_user=admin \
             --admin_password=not-a-production-password --admin_email=admin@example.invalid
+
           plugin="$wordpress/wp-content/plugins/toggly"
           mkdir -p "$plugin"
           tar -xf "$artifacts/wordpress.tar" -C "$plugin"
           composer --working-dir="$plugin" config repositories.toggly artifact "$artifacts"
-          composer --working-dir="$plugin" install --no-interaction --prefer-dist --no-progress
+          # Resolve transitive PSR packages against the matrix PHP (7.4 must not
+          # pull psr/log 3.x / psr/simple-cache 3.x which require PHP >= 8.0).
+          composer --working-dir="$plugin" update --no-interaction --prefer-dist --no-progress --prefer-stable
+
+          mock_port="$(php -r '
+            $server = @stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr);
+            if ($server === false) {
+              fwrite(STDERR, "Unable to allocate mock definitions port: $errstr\n");
+              exit(1);
+            }
+            $name = stream_socket_get_name($server, false);
+            fclose($server);
+            echo substr($name, strrpos($name, ":") + 1);
+          ')"
+          echo "$mock_port" >"$mock_port_file"
+          php -S "127.0.0.1:${mock_port}" \
+            "$GITHUB_WORKSPACE/tests/HostFixtures/wordpress-mock-definitions-server.php" \
+            >"$mock_log" 2>&1 &
+          mock_pid=$!
+          cleanup_mock() {
+            kill "$mock_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup_mock EXIT
+
+          for attempt in {1..30}; do
+            if curl -fsS "http://127.0.0.1:${mock_port}/definitions/ci-app/Production" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "Mock Toggly definitions server did not become ready." >&2
+              cat "$mock_log" >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Configure the plugin before activation so plugins_loaded boots with
+          # the mock definitions origin.
+          wp option update toggly_settings --path="$wordpress" --format=json \
+            "{\"app_key\":\"ci-app\",\"environment\":\"Production\",\"base_url\":\"http://127.0.0.1:${mock_port}/\",\"use_signed_definitions\":false}"
+
           wp plugin activate toggly --path="$wordpress"
           wp eval --path="$wordpress" '
             if (!function_exists("toggly_is_enabled")) { throw new RuntimeException("Toggly plugin did not initialize."); }
-            if (toggly_is_enabled("missing-feature") !== false) { throw new RuntimeException("Unexpected evaluation result."); }
             if (!wp_next_scheduled("toggly_refresh_features")) { throw new RuntimeException("Refresh cron was not scheduled."); }
             if (!wp_next_scheduled("toggly_send_stats")) { throw new RuntimeException("Telemetry cron was not scheduled."); }
             echo "Toggly WordPress plugin activation passed.\\n";
           '
+          wp eval-file "$GITHUB_WORKSPACE/tests/HostFixtures/wordpress-flag-evaluation.php" --path="$wordpress"
 
   sonar:
     name: SonarQube Analysis
@@ -526,7 +582,7 @@ jobs:
   summary:
     name: Analysis Summary
     runs-on: ubuntu-latest
-    needs: [commits-since-last-run, test, smoke-test, laravel-hosts, wordpress-host, sonar, dependency-check]
+    needs: [commits-since-last-run, test, smoke-test, laravel-hosts, wordpress-hosts, sonar, dependency-check]
     if: always()
 
     steps:
@@ -568,7 +624,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Current framework hosts" >> $GITHUB_STEP_SUMMARY
           echo "- Laravel 12.12.2 and 13.10.1 from packed artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- WordPress 7.1 plugin activation from a packed artifact on PHP 8.5" >> $GITHUB_STEP_SUMMARY
+          echo "- WordPress 5.0 (PHP 7.4) and 7.1.4 (PHP 8.5) plugin host checks from packed artifacts, including mocked definitions flag evaluation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Packages Tested" >> $GITHUB_STEP_SUMMARY
           echo "- toggly/feature-management-php (core at repo root)" >> $GITHUB_STEP_SUMMARY

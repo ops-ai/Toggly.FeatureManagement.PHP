@@ -375,8 +375,10 @@ helpers and are not the evaluation path.
 
 ## WordPress Requirements
 
-- WordPress 5.0 or higher. The maintained plugin host is validated on
-  WordPress 7.1 with PHP 8.5.
+- WordPress 5.0 or higher (`Requires at least: 5.0`; `Tested up to: 7.1`).
+  CI validates WordPress 5.0 on PHP 7.4 and WordPress 7.1.4 on PHP 8.5,
+  including mocked definitions flag evaluation through the plugin helpers and
+  `[toggly_feature]` shortcode.
 - No external dependencies (uses WordPress APIs)
 
 ## Architecture

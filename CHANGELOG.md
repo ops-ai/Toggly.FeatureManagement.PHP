@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Dropped Laravel 10 and 11 support for `toggly/laravel`. Supported Illuminate /
+  Laravel host majors are 12 and 13 only. Packagist advisory
+  `PKSA-b41t-wbzk-9q51` blocks every `laravel/framework` 10.x and 11.x release,
+  so CI no longer installs those hosts and does not ignore the advisory.
+- Laravel `#[FeatureUsage]` middleware records real usage scopes (`usedCount`,
+  duration, errors) instead of a redundant `isEnabled()` check that only
+  double-counted `checkCount`.
+
 ## [1.3.1] - 2026-10-23
 
 ### Fixed

@@ -32,7 +32,7 @@ body:
     attributes:
       label: Runtime / environment
       description: PHP version and framework versions if relevant
-      placeholder: e.g. PHP 8.3, Laravel 11, WordPress 6.7
+      placeholder: e.g. PHP 8.3, Laravel 12, WordPress 6.7
     validations:
       required: true
   - type: textarea

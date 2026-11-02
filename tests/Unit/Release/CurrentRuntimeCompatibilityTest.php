@@ -48,11 +48,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
 
         $this->assertStringContainsString("'8.5'", $workflow);
         $this->assertStringContainsString("laravel-version: '12.12.2'", $workflow);
-        $this->assertStringContainsString("laravel-version: '13.10.1'", $workflow);
+        $this->assertStringContainsString("laravel-version: '13.11.0'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '11.6.1'", $workflow);
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
         $this->assertStringContainsString('repositories.toggly artifact', $workflow);
+        $this->assertStringContainsString('laravel-bootstrap.php', $workflow);
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
     }
 
@@ -60,6 +61,7 @@ class CurrentRuntimeCompatibilityTest extends TestCase
     {
         $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
         $policyFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/configure-laravel-policy.php');
+        $bootstrapFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/laravel-bootstrap.php');
 
         $this->assertStringContainsString('create-project --no-install --no-scripts', $workflow);
         $this->assertStringContainsString('configure-laravel-policy.php', $workflow);
@@ -70,6 +72,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringNotContainsString('--no-blocking', $workflow);
         $this->assertStringNotContainsString('--no-security-blocking', $workflow);
         $this->assertStringNotContainsString('advisories.block', $workflow);
+
+        $this->assertStringContainsString('MockHandler', $bootstrapFixture);
+        $this->assertStringContainsString('Toggly::isEnabled', $bootstrapFixture);
+        $this->assertStringContainsString('FeatureGateMiddleware', $bootstrapFixture);
+        $this->assertStringContainsString('@feature', $bootstrapFixture);
+        $this->assertStringContainsString('refreshFeatures', $bootstrapFixture);
 
         $mysqlReady = strpos($workflow, '@mysqli_connect("127.0.0.1", "root", "root", "wordpress")');
         $wordpressInstall = strpos($workflow, 'wp core install --path="$wordpress"');
@@ -92,7 +100,7 @@ class CurrentRuntimeCompatibilityTest extends TestCase
 
     public function testConfigureLaravelPolicyIsANoOpForSupportedHosts(): void
     {
-        foreach (['12.12.2', '13.10.1'] as $laravelVersion) {
+        foreach (['12.12.2', '13.11.0'] as $laravelVersion) {
             $hostDirectory = sys_get_temp_dir() . '/toggly-laravel-policy-' . bin2hex(random_bytes(8));
             mkdir($hostDirectory);
             $manifestPath = $hostDirectory . '/composer.json';

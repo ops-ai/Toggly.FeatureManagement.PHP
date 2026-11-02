@@ -166,7 +166,7 @@ jobs:
         include:
           - laravel-version: '12.12.2'
             php-version: '8.5'
-          - laravel-version: '13.10.1'
+          - laravel-version: '13.11.0'
             php-version: '8.5'
 
     steps:
@@ -567,7 +567,7 @@ jobs:
           echo "- PHP 8.5" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Current framework hosts" >> $GITHUB_STEP_SUMMARY
-          echo "- Laravel 12.12.2 and 13.10.1 from packed artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Laravel 12.12.2 and 13.11.0 from packed artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- WordPress 7.1 plugin activation from a packed artifact on PHP 8.5" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Packages Tested" >> $GITHUB_STEP_SUMMARY

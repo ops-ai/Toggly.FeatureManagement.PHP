@@ -21,6 +21,15 @@ namespace Toggly\FeatureManagement\Http {
 
         return \fgets($stream, ...$options);
     }
+
+    function php_sapi_name()
+    {
+        if (array_key_exists('toggly_protocol_test_sapi', $GLOBALS)) {
+            return $GLOBALS['toggly_protocol_test_sapi'];
+        }
+
+        return \php_sapi_name();
+    }
 }
 
 namespace Toggly\FeatureManagement\Tests\Unit\Http {
@@ -34,12 +43,20 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
 
     protected function setUp(): void
     {
-        unset($GLOBALS['toggly_protocol_test_socket'], $GLOBALS['toggly_protocol_test_handshake_lines']);
+        unset(
+            $GLOBALS['toggly_protocol_test_socket'],
+            $GLOBALS['toggly_protocol_test_handshake_lines'],
+            $GLOBALS['toggly_protocol_test_sapi']
+        );
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['toggly_protocol_test_socket'], $GLOBALS['toggly_protocol_test_handshake_lines']);
+        unset(
+            $GLOBALS['toggly_protocol_test_socket'],
+            $GLOBALS['toggly_protocol_test_handshake_lines'],
+            $GLOBALS['toggly_protocol_test_sapi']
+        );
         foreach ($this->testSockets as $socket) {
             if (is_resource($socket)) {
                 fclose($socket);
@@ -47,6 +64,34 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
         }
         $this->testSockets = [];
         parent::tearDown();
+    }
+
+    public function testLongRunningSapiTokensAreDetectedWithoutChangingCliDefault(): void
+    {
+        foreach (['openswoole', 'swoole', 'roadrunner', 'frankenphp'] as $sapi) {
+            $GLOBALS['toggly_protocol_test_sapi'] = $sapi;
+            self::assertTrue(
+                $this->callStatic(WebSocketClient::class, 'isLongRunningProcess'),
+                "expected long-running detection for SAPI {$sapi}"
+            );
+        }
+
+        $GLOBALS['toggly_protocol_test_sapi'] = 'fpm-fcgi';
+        self::assertFalse($this->callStatic(WebSocketClient::class, 'isLongRunningProcess'));
+    }
+
+    public function testParseWsUrlKeepsSecureAndInsecureSchemes(): void
+    {
+        $client = new WebSocketClient();
+
+        self::assertSame(
+            ['scheme' => 'wss', 'host' => 'live.example.test', 'port' => 443, 'path' => '/ws'],
+            $this->call($client, 'parseWsUrl', 'wss://live.example.test/ws')
+        );
+        self::assertSame(
+            ['scheme' => 'ws', 'host' => 'live.example.test', 'port' => 80, 'path' => '/ws'],
+            $this->call($client, 'parseWsUrl', 'ws://live.example.test/ws')
+        );
     }
 
     public function testNativeConnectionsForwardContextAndErrorReferencesOutsideTheFixture(): void
@@ -315,6 +360,14 @@ final class WebSocketClientProtocolResilienceTest extends TestCase
         $reflection->setAccessible(true);
 
         return $reflection->invoke($client, ...$arguments);
+    }
+
+    private function callStatic(string $class, string $method, ...$arguments)
+    {
+        $reflection = new \ReflectionMethod($class, $method);
+        $reflection->setAccessible(true);
+
+        return $reflection->invoke(null, ...$arguments);
     }
 
     private function set(WebSocketClient $client, string $property, $value): void

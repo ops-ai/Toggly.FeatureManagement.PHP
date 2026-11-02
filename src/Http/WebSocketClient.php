@@ -516,9 +516,10 @@ class WebSocketClient
             return true;
         }
 
-        // Swoole / OpenSwoole / RoadRunner / FrankenPHP expose custom SAPIs
-        if (strpos($sapi, 'swoole') !== false
-            || strpos($sapi, 'openswoole') !== false
+        // Swoole / OpenSwoole / RoadRunner / FrankenPHP expose custom SAPIs.
+        // Check openswoole before swoole so the more specific token remains reachable.
+        if (strpos($sapi, 'openswoole') !== false
+            || strpos($sapi, 'swoole') !== false
             || strpos($sapi, 'roadrunner') !== false
             || strpos($sapi, 'frankenphp') !== false
         ) {

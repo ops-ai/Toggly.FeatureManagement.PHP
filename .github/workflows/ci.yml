@@ -57,7 +57,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: ['8.2', '8.3', '8.4', '8.5']
+        # Declared core php support is ^7.4|^8.0|...|^8.5 — exercise floor and latest
+        # plus the previously unproven 8.0/8.1 lines.
+        php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
 
     steps:
       - name: Checkout code
@@ -69,7 +71,7 @@ jobs:
           php-version: ${{ matrix.php-version }}
           coverage: xdebug
           tools: composer:v2
-          extensions: mbstring, xml, ctype, json, mongodb
+          extensions: mbstring, xml, ctype, json, mongodb, sqlite3, pdo_sqlite
 
       - name: Get Composer cache directory
         id: composer-cache
@@ -94,7 +96,35 @@ jobs:
           composer validate --strict --no-check-version packages/wordpress/composer.json
 
       - name: Install dependencies (path repos)
-        run: composer update --prefer-dist --no-progress --no-interaction --prefer-stable
+        run: |
+          set -euo pipefail
+          # illuminate/* ^12|^13 needs PHP ^8.2/^8.3. mongodb/mongodb ^2 needs PHP ^8.1.
+          # google/protobuf 3.25.x is blocked by Packagist advisory PKSA-tcfz-w4fm-hhk9,
+          # while 4.x/5.x need PHP >=8.1/>=8.2 — so below 8.1 no safe protobuf installs.
+          # Strip only packages that cannot install on this runtime so core tests still
+          # prove the declared php floor without raising it. Restore composer.json after
+          # install so contract tests still assert the published constraint ranges.
+          cp composer.json composer.json.ci-bak
+          if php -r 'exit(PHP_VERSION_ID < 80200 ? 0 : 1);'; then
+            composer remove --dev --no-update \
+              illuminate/cache illuminate/contracts illuminate/http illuminate/routing
+          fi
+          if php -r 'exit(PHP_VERSION_ID < 80100 ? 0 : 1);'; then
+            composer remove --dev --no-update mongodb/mongodb google/protobuf
+          fi
+          composer update --prefer-dist --no-progress --no-interaction --prefer-stable
+          echo "Resolved phpunit: $(composer show phpunit/phpunit | awk '/^versions/ {print $2; exit}')"
+          if composer show google/protobuf >/dev/null 2>&1; then
+            echo "Resolved google/protobuf: $(composer show google/protobuf | awk '/^versions/ {print $2; exit}')"
+          else
+            echo "google/protobuf not installed on this PHP (expected below 8.1; see PKSA-tcfz-w4fm-hhk9)"
+          fi
+          if composer show illuminate/cache >/dev/null 2>&1; then
+            echo "Resolved illuminate/cache: $(composer show illuminate/cache | awk '/^versions/ {print $2; exit}')"
+          else
+            echo "illuminate/* not installed on this PHP (expected below 8.2)"
+          fi
+          mv composer.json.ci-bak composer.json
 
       - name: Check code style
         run: |
@@ -106,7 +136,26 @@ jobs:
         continue-on-error: true
 
       - name: Run PHPUnit tests with coverage
-        run: vendor/bin/phpunit --coverage-clover=coverage.xml --log-junit=test-results.xml --coverage-text
+        run: |
+          set -euo pipefail
+          rm -rf .phpunit.cache
+          phpunit_args=(--coverage-clover=coverage.xml --log-junit=test-results.xml --coverage-text)
+          # Sibling Laravel/WordPress packages still declare php ^7.4 but contain
+          # PHP 8.0+ syntax (attributes, unions, match). Core CI proves the core
+          # package on older PHP; package-local suites stay on PHP that can load them.
+          # illuminate/* is unavailable below PHP 8.2, so skip Laravel unit tests there.
+          # PHPUnit 9 only accepts one CLI directory, so floor jobs use dedicated XMLs.
+          if php -r 'exit(PHP_VERSION_ID < 80100 ? 0 : 1);'; then
+            # 7.4 and 8.0: WordPress package sources still use PHP 8.0+ syntax.
+            vendor/bin/phpunit --configuration phpunit-core-floor.xml \
+              "${phpunit_args[@]}" --exclude-group integration
+          elif php -r 'exit(PHP_VERSION_ID < 80200 ? 0 : 1);'; then
+            # 8.1: WordPress loads; illuminate/* still cannot install.
+            vendor/bin/phpunit --configuration phpunit-core-pre-illuminate.xml \
+              "${phpunit_args[@]}" --exclude-group integration
+          else
+            vendor/bin/phpunit "${phpunit_args[@]}"
+          fi
 
       - name: Upload coverage (PHP 8.3 only)
         if: matrix.php-version == '8.3'
@@ -166,7 +215,7 @@ jobs:
         include:
           - laravel-version: '12.12.2'
             php-version: '8.5'
-          - laravel-version: '13.10.1'
+          - laravel-version: '13.11.0'
             php-version: '8.5'
 
     steps:
@@ -620,13 +669,16 @@ jobs:
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### PHP Versions Tested" >> $GITHUB_STEP_SUMMARY
+          echo "- PHP 7.4 (floor)" >> $GITHUB_STEP_SUMMARY
+          echo "- PHP 8.0" >> $GITHUB_STEP_SUMMARY
+          echo "- PHP 8.1" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.2" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.3" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.4" >> $GITHUB_STEP_SUMMARY
-          echo "- PHP 8.5" >> $GITHUB_STEP_SUMMARY
+          echo "- PHP 8.5 (latest)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Current framework hosts" >> $GITHUB_STEP_SUMMARY
-          echo "- Laravel 12.12.2 and 13.10.1 from packed artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Laravel 12.12.2 and 13.11.0 from packed artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- WordPress 5.0 (PHP 7.4) and 7.1.4 (PHP 8.5) plugin host checks from packed artifacts, including mocked definitions flag evaluation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Packages Tested" >> $GITHUB_STEP_SUMMARY

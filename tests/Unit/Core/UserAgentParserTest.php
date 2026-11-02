@@ -2,6 +2,7 @@
 
 namespace Toggly\FeatureManagement\Tests\Unit\Core;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Toggly\FeatureManagement\Core\UserAgentParser;
 
@@ -16,6 +17,7 @@ final class UserAgentParserTest extends TestCase
     /**
      * @dataProvider classificationCases
      */
+    #[DataProvider('classificationCases')]
     public function testClassifiesBrowserOsAndAppleDeviceFamilies(string $userAgent, array $expected): void
     {
         $this->assertSame($expected, UserAgentParser::parse($userAgent));

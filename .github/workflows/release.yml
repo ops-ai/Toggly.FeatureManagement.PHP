@@ -327,6 +327,36 @@ jobs:
           git push -u origin main
           echo "Bootstrapped ${MIRROR_REPO}#main"
 
+      # Each mirror package keeps its own composer.json version (independent of
+      # core). Tag the mirror with that version so Packagist accepts the tag;
+      # tagging with the core version made Packagist skip Laravel/WordPress.
+      - name: Resolve mirror package version
+        id: package
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          MIRROR_REPO: ops-ai/${{ matrix.package.repository_name }}
+          PACKAGE_PATH: packages/${{ matrix.package.local_path }}
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.version // empty' "${PACKAGE_PATH}/composer.json")
+          if [ -z "${version}" ] || [ "${version}" = "null" ]; then
+            echo "::error::Missing version in ${PACKAGE_PATH}/composer.json"
+            exit 1
+          fi
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --exit-code \
+            "https://x-access-token:${GH_TOKEN}@github.com/${MIRROR_REPO}.git" \
+            "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Mirror tag ${tag} already exists on ${MIRROR_REPO} — splitting main without retagging."
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            echo "Will create mirror tag ${tag} on ${MIRROR_REPO}."
+          fi
+
       - name: Split package directory to mirror
         uses: danharrin/monorepo-split-github-action@v2.4.5
         env:
@@ -336,7 +366,9 @@ jobs:
           repository_organization: ops-ai
           repository_name: ${{ matrix.package.repository_name }}
           branch: main
-          tag: v${{ needs.validate.outputs.version }}
+          # Optional input: omit when the package version tag already exists so
+          # we never move/overwrite an existing Packagist-visible tag.
+          tag: ${{ steps.package.outputs.tag_exists == 'false' && steps.package.outputs.tag || '' }}
           user_name: github-actions[bot]
           user_email: 41898282+github-actions[bot]@users.noreply.github.com
 
@@ -357,12 +389,12 @@ jobs:
           echo "| Registry latest | ${{ needs.validate.outputs.registry_latest || 'none' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Release mode | ${{ github.event.inputs.release_mode || 'publish' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Reason | ${{ needs.validate.outputs.reason }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tag | v${{ needs.validate.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Core tag | v${{ needs.validate.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Core package | toggly/feature-management-php (repo root) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Laravel mirror | ops-ai/Toggly.FeatureManagement.PHP.Laravel |" >> $GITHUB_STEP_SUMMARY
-          echo "| WordPress mirror | ops-ai/Toggly.FeatureManagement.PHP.Wordpress |" >> $GITHUB_STEP_SUMMARY
+          echo "| Laravel mirror | ops-ai/Toggly.FeatureManagement.PHP.Laravel (tagged from packages/laravel/composer.json) |" >> $GITHUB_STEP_SUMMARY
+          echo "| WordPress mirror | ops-ai/Toggly.FeatureManagement.PHP.Wordpress (tagged from packages/wordpress/composer.json) |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-release | ${{ github.event.inputs.prerelease }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note**: Packagist auto-updates from GitHub tags via webhook on each package repo." >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: Packagist auto-updates from GitHub tags via webhook on each package repo. Mirror tags use each package's own \`composer.json\` version (not the core version)." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "[Core on Packagist](https://packagist.org/packages/toggly/feature-management-php)" >> $GITHUB_STEP_SUMMARY

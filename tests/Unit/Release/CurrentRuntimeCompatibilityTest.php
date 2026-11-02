@@ -41,14 +41,15 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         );
     }
 
-    public function testCiExercisesPhp85AndCurrentLaravelHostsFromPackedArtifacts(): void
+    public function testCiExercisesPhpFloorThroughLatestAndCurrentLaravelHostsFromPackedArtifacts(): void
     {
         $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
         $releaseWorkflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/release.yml');
 
+        $this->assertStringContainsString("php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']", $workflow);
         $this->assertStringContainsString("'8.5'", $workflow);
         $this->assertStringContainsString("laravel-version: '12.12.2'", $workflow);
-        $this->assertStringContainsString("laravel-version: '13.10.1'", $workflow);
+        $this->assertStringContainsString("laravel-version: '13.11.0'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '11.6.1'", $workflow);
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
@@ -58,13 +59,28 @@ class CurrentRuntimeCompatibilityTest extends TestCase
             'sonar.coverage.exclusions=**/Telemetry/Pb/**,**/GPBMetadata/**,packages/wordpress/toggly.php',
             $workflow
         );
+        $this->assertStringContainsString('laravel-bootstrap.php', $workflow);
         $this->assertStringContainsString("'8.5'", $releaseWorkflow);
+    }
+
+    public function testCoreDevConstraintsIncludeCurrentPhpunitIlluminateAndProtobufMajors(): void
+    {
+        $json = $this->readJson('composer.json');
+
+        $this->assertSame('^9.6|^10|^11|^12|^13', $json['require-dev']['phpunit/phpunit']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/cache']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/contracts']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/http']);
+        $this->assertSame('^12.0|^13.0', $json['require-dev']['illuminate/routing']);
+        $this->assertSame('^3.25|^4.0|^5.0', $json['require-dev']['google/protobuf']);
+        $this->assertStringContainsString('^5.0', $json['suggest']['google/protobuf']);
     }
 
     public function testLaravelHostJobsDoNotIgnoreSecurityAdvisoriesAndWordPressWaitsForMysql(): void
     {
         $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
         $policyFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/configure-laravel-policy.php');
+        $bootstrapFixture = (string) file_get_contents($this->repoRoot() . '/tests/HostFixtures/laravel-bootstrap.php');
 
         $this->assertStringContainsString('create-project --no-install --no-scripts', $workflow);
         $this->assertStringContainsString('configure-laravel-policy.php', $workflow);
@@ -75,6 +91,12 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertStringNotContainsString('--no-blocking', $workflow);
         $this->assertStringNotContainsString('--no-security-blocking', $workflow);
         $this->assertStringNotContainsString('advisories.block', $workflow);
+
+        $this->assertStringContainsString('MockHandler', $bootstrapFixture);
+        $this->assertStringContainsString('Toggly::isEnabled', $bootstrapFixture);
+        $this->assertStringContainsString('FeatureGateMiddleware', $bootstrapFixture);
+        $this->assertStringContainsString('@feature', $bootstrapFixture);
+        $this->assertStringContainsString('refreshFeatures', $bootstrapFixture);
 
         $mysqlReady = strpos($workflow, '@mysqli_connect("127.0.0.1", "root", "root", "wordpress")');
         $wordpressInstall = strpos($workflow, 'wp core install --path="$wordpress"');
@@ -113,7 +135,7 @@ class CurrentRuntimeCompatibilityTest extends TestCase
 
     public function testConfigureLaravelPolicyIsANoOpForSupportedHosts(): void
     {
-        foreach (['12.12.2', '13.10.1'] as $laravelVersion) {
+        foreach (['12.12.2', '13.11.0'] as $laravelVersion) {
             $hostDirectory = sys_get_temp_dir() . '/toggly-laravel-policy-' . bin2hex(random_bytes(8));
             mkdir($hostDirectory);
             $manifestPath = $hostDirectory . '/composer.json';

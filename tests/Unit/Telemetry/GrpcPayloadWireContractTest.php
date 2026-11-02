@@ -9,6 +9,15 @@ use Toggly\FeatureManagement\Telemetry\Pb\Usage\FeatureStat;
 
 final class GrpcPayloadWireContractTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (!class_exists(\Google\Protobuf\Internal\Message::class)) {
+            $this->markTestSkipped('google/protobuf required for gRPC wire-contract tests');
+        }
+    }
+
     public function testMetricsPayloadRoundTripsTypedValuesAndToleratesUnknownFutureFields(): void
     {
         $message = GrpcPayloadConverter::metricStatFromPayload([

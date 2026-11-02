@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         executionOrder="depends,defects">
+    <!--
+      Used on PHP < 8.2 where illuminate/* cannot install and/or sibling
+      Laravel/WordPress packages contain PHP 8.0+ syntax. Lists core suites
+      explicitly because PHPUnit 9 only accepts a single CLI directory arg.
+    -->
+    <testsuites>
+        <testsuite name="default">
+            <directory>tests/Unit/Core</directory>
+            <directory>tests/Unit/Http</directory>
+            <directory>tests/Unit/Models</directory>
+            <directory>tests/Unit/Telemetry</directory>
+            <directory>tests/Unit/Security</directory>
+            <directory>tests/Unit/Storage</directory>
+            <exclude>tests/Unit/Storage/SnapshotProviders/MongoDBSnapshotProviderUnitTest.php</exclude>
+            <directory>tests/Unit/Release</directory>
+            <file>tests/Storage/SnapshotProviders/DatabaseSnapshotProviderTest.php</file>
+            <file>tests/Unit/FeatureManagerTest.php</file>
+            <file>tests/Unit/FilterParityFixturesTest.php</file>
+            <file>tests/Unit/SegmentMembershipClientTest.php</file>
+            <file>tests/Unit/SmokeTest.php</file>
+        </testsuite>
+    </testsuites>
+    <coverage>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </coverage>
+    <php>
+        <env name="MONGO_TEST_URI" value="mongodb://localhost:27017"/>
+    </php>
+</phpunit>

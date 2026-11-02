@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="depends,defects"
+         colors="true">
+    <!--
+      Used on PHP 8.0/8.1: WordPress package tests can load, Laravel/illuminate
+      cannot. PHPUnit 10+ accepts multiple paths, but keep an explicit suite for
+      consistency with the floor job.
+    -->
+    <testsuites>
+        <testsuite name="default">
+            <directory>tests/Unit/Core</directory>
+            <directory>tests/Unit/Http</directory>
+            <directory>tests/Unit/Models</directory>
+            <directory>tests/Unit/Telemetry</directory>
+            <directory>tests/Unit/Security</directory>
+            <directory>tests/Unit/Storage</directory>
+            <directory>tests/Unit/Release</directory>
+            <directory>tests/Unit/WordPress</directory>
+            <directory>tests/Storage/SnapshotProviders</directory>
+            <exclude>tests/Storage/SnapshotProviders/MongoDBSnapshotProviderTest.php</exclude>
+            <file>tests/Unit/FeatureManagerTest.php</file>
+            <file>tests/Unit/FilterParityFixturesTest.php</file>
+            <file>tests/Unit/SegmentMembershipClientTest.php</file>
+            <file>tests/Unit/SmokeTest.php</file>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+            <directory suffix=".php">packages/wordpress/src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="MONGO_TEST_URI" value="mongodb://localhost:27017"/>
+    </php>
+</phpunit>

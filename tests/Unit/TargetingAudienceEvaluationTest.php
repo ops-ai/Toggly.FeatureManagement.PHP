@@ -354,6 +354,273 @@ class TargetingAudienceEvaluationTest extends TestCase
         ));
     }
 
+    public function testGroupPartialRolloutWithoutIdentityFailsClosedForThatGroup(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience' => [
+                    'Groups' => [
+                        ['Name' => 'beta', 'RolloutPercentage' => 50],
+                    ],
+                    'DefaultRolloutPercentage' => 0,
+                ],
+            ],
+            ['groups' => ['beta']]
+        );
+
+        $this->assertFalse($actual);
+    }
+
+    public function testDefaultPartialRolloutMissesWhenBucketAbovePercentage(): void
+    {
+        $featureKey = 'demo-feature';
+        $identity = 'user-123';
+        $bucket = FeatureManager::computePercentile($identity, $featureKey);
+
+        $actual = $this->evaluate(
+            [
+                'Audience.DefaultRolloutPercentage' => max(0.0, $bucket - 0.01),
+            ],
+            ['identity' => $identity],
+            $featureKey
+        );
+
+        $this->assertFalse($actual);
+    }
+
+    public function testFlatGroupRolloutPercentageKeyWithoutNameIsIgnored(): void
+    {
+        // RolloutPercentage alone cannot invent a group name.
+        $actual = $this->evaluate(
+            [
+                'Audience.Groups:0:RolloutPercentage' => 100,
+                'Audience.DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'alice', 'groups' => ['beta']]
+        );
+
+        $this->assertFalse($actual);
+    }
+
+    public function testFlatGroupNameAndRolloutPercentageBinderKeys(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience.Groups:0:RolloutPercentage' => 100,
+                'Audience.Groups:0:Name' => 'beta',
+                'Audience.DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'alice', 'groups' => ['beta']]
+        );
+
+        $this->assertTrue($actual);
+    }
+
+    public function testFlatGroupRolloutPercentageNonNumericIgnored(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience.Groups:0:Name' => 'beta',
+                'Audience.Groups:0:RolloutPercentage' => 'not-a-number',
+                'Audience.DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'alice', 'groups' => ['beta']]
+        );
+
+        // Non-numeric rollout → treat as full include (null rollout).
+        $this->assertTrue($actual);
+    }
+
+    public function testGroupsParamAsArrayOfNamedRollouts(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Groups' => [
+                    null,
+                    '',
+                    ['Name' => '', 'RolloutPercentage' => 100],
+                    ['name' => '   '],
+                    ['Name' => 'beta', 'RolloutPercentage' => '50'],
+                    ['Name' => 'premium', 'rolloutPercentage' => 'not-numeric'],
+                    'gamma',
+                ],
+                'DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'alice', 'groups' => ['premium', 'gamma']]
+        );
+
+        // premium has non-numeric rollout → full include; gamma string → full include.
+        $this->assertTrue($actual);
+    }
+
+    public function testExclusionGroupMissWhenUserNotInExcludedGroup(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience.Exclusion.Groups:0' => 'blocked',
+                'Audience.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'alice', 'groups' => ['beta']]
+        );
+
+        $this->assertTrue($actual);
+    }
+
+    public function testIgnoreCaseAsIntegerFlags(): void
+    {
+        $caseInsensitive = $this->evaluate(
+            [
+                'IgnoreCase' => 1,
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        );
+        $caseSensitive = $this->evaluate(
+            [
+                'IgnoreCase' => 0,
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        );
+
+        $this->assertFalse($caseInsensitive);
+        $this->assertTrue($caseSensitive);
+    }
+
+    public function testNestedAudienceUsersArrayAndColonExclusionKeys(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience' => [
+                    'users' => ['vip'],
+                    'defaultRolloutPercentage' => 0,
+                ],
+                'Audience:Exclusion:Users:0' => 'vip',
+            ],
+            ['identity' => 'vip']
+        );
+
+        $this->assertFalse($actual);
+    }
+
+    public function testContextNullFailsClosed(): void
+    {
+        $definition = new FeatureDefinition([
+            'featureKey' => 'null-context',
+            'requirementType' => 'Any',
+            'filters' => [
+                new FeatureFilter([
+                    'name' => 'Targeting',
+                    'parameters' => [
+                        'Audience.DefaultRolloutPercentage' => 100,
+                    ],
+                ]),
+            ],
+        ]);
+
+        $this->assertFalse($this->createManager()->evaluateDefinition($definition, null));
+    }
+
+    public function testEmptyExclusionEntriesDoNotExclude(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience.Exclusion.Users:0' => '',
+                'Audience.Exclusion.Groups:0' => '',
+                'Audience.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'alice', 'groups' => ['beta']]
+        );
+
+        $this->assertTrue($actual);
+    }
+
+    public function testNestedAudienceSkipsNonArrayGroupEntriesAndWhitespaceNames(): void
+    {
+        $actual = $this->evaluate(
+            [
+                'Audience' => [
+                    'Groups' => [
+                        true,
+                        false,
+                        ['Name' => '   ', 'RolloutPercentage' => 100],
+                        ['Name' => 'beta', 'RolloutPercentage' => 100],
+                    ],
+                    'Users' => [null, '', '  ', 'alice'],
+                    'DefaultRolloutPercentage' => 0,
+                ],
+            ],
+            ['identity' => 'other', 'groups' => ['beta']]
+        );
+
+        $this->assertTrue($actual);
+    }
+
+    public function testIgnoreCaseBoolAndUnknownValues(): void
+    {
+        $this->assertFalse($this->evaluate(
+            [
+                'IgnoreCase' => true,
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        ));
+        $this->assertTrue($this->evaluate(
+            [
+                'IgnoreCase' => false,
+                'Audience.Users:0' => 'Alice',
+                'Audience.DefaultRolloutPercentage' => 0,
+            ],
+            ['identity' => 'Alice']
+        ));
+        // Unknown / non-scalar IgnoreCase → default true (match .NET/JS).
+        $this->assertFalse($this->evaluate(
+            [
+                'IgnoreCase' => 2,
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        ));
+        $this->assertFalse($this->evaluate(
+            [
+                'IgnoreCase' => ['nope'],
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        ));
+        $this->assertFalse($this->evaluate(
+            [
+                'IgnoreCase' => 'True',
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        ));
+        $this->assertTrue($this->evaluate(
+            [
+                'IgnoreCase' => 'False',
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        ));
+        $this->assertFalse($this->evaluate(
+            [
+                'IgnoreCase' => 'maybe',
+                'Audience.Exclusion.Users:0' => 'alice',
+                'Audience.DefaultRolloutPercentage' => 100,
+            ],
+            ['identity' => 'Alice']
+        ));
+    }
+
     /**
      * @param array<string, mixed> $parameters
      * @param array<string, mixed> $context

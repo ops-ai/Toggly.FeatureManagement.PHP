@@ -323,11 +323,11 @@ class FeatureManager
             $rollout = $group['rollout'];
             // Flat Audience.Groups:N strings and nested groups without an
             // explicit RolloutPercentage are full includes.
-            if ($rollout === null || $rollout >= 100) {
-                $matched = true;
-            } elseif ($rollout > 0 && $identity !== null && $identity !== ''
-                && self::computePercentile($identity, $featureKey) < $rollout
-            ) {
+            $fullInclude = $rollout === null || $rollout >= 100;
+            $partialHit = $rollout !== null && $rollout > 0 && $rollout < 100
+                && $identity !== null && $identity !== ''
+                && self::computePercentile($identity, $featureKey) < $rollout;
+            if ($fullInclude || $partialHit) {
                 $matched = true;
             }
         }
@@ -613,25 +613,47 @@ class FeatureManager
                 $parsed = ['name' => $name, 'rollout' => null];
             }
         } elseif (is_array($entry)) {
-            $nameRaw = $entry['Name'] ?? $entry['name'] ?? null;
-            if ($nameRaw !== null && $nameRaw !== '') {
-                $name = trim((string)$nameRaw);
-                if ($name !== '') {
-                    $rollout = null;
-                    if (array_key_exists('RolloutPercentage', $entry)
-                        || array_key_exists('rolloutPercentage', $entry)
-                    ) {
-                        $rawPct = $entry['RolloutPercentage'] ?? $entry['rolloutPercentage'];
-                        if (is_numeric($rawPct)) {
-                            $rollout = (float)$rawPct;
-                        }
-                    }
-                    $parsed = ['name' => $name, 'rollout' => $rollout];
-                }
+            $parsed = $this->parseNamedGroupRollout($entry);
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     * @return array{name: string, rollout: float|null}|null
+     */
+    private function parseNamedGroupRollout(array $entry): ?array
+    {
+        $parsed = null;
+        $nameRaw = $entry['Name'] ?? $entry['name'] ?? null;
+        if ($nameRaw !== null && $nameRaw !== '') {
+            $name = trim((string)$nameRaw);
+            if ($name !== '') {
+                $parsed = [
+                    'name' => $name,
+                    'rollout' => $this->readGroupRolloutPercentage($entry),
+                ];
             }
         }
 
         return $parsed;
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     */
+    private function readGroupRolloutPercentage(array $entry): ?float
+    {
+        $rollout = null;
+        if (array_key_exists('RolloutPercentage', $entry) || array_key_exists('rolloutPercentage', $entry)) {
+            $rawPct = $entry['RolloutPercentage'] ?? $entry['rolloutPercentage'];
+            if (is_numeric($rawPct)) {
+                $rollout = (float)$rawPct;
+            }
+        }
+
+        return $rollout;
     }
 
     /**
@@ -641,22 +663,26 @@ class FeatureManager
     {
         $result = null;
         if ($params !== null && array_key_exists($key, $params) && $params[$key] !== null) {
-            $value = $params[$key];
-            if (is_bool($value)) {
-                $result = $value;
-            } elseif (is_int($value) || is_float($value)) {
-                if ((float)$value === 1.0) {
-                    $result = true;
-                } elseif ((float)$value === 0.0) {
-                    $result = false;
-                }
-            } elseif (is_string($value)) {
-                if ($value === 'true' || $value === 'True' || $value === '1') {
-                    $result = true;
-                } elseif ($value === 'false' || $value === 'False' || $value === '0') {
-                    $result = false;
-                }
-            }
+            $result = $this->coerceBoolValue($params[$key]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function coerceBoolValue($value): ?bool
+    {
+        $result = null;
+        if (is_bool($value)) {
+            $result = $value;
+        } elseif ((is_int($value) || is_float($value)) && ((float)$value === 1.0 || (float)$value === 0.0)) {
+            $result = (float)$value === 1.0;
+        } elseif (is_string($value) && in_array($value, ['true', 'True', '1'], true)) {
+            $result = true;
+        } elseif (is_string($value) && in_array($value, ['false', 'False', '0'], true)) {
+            $result = false;
         }
 
         return $result;

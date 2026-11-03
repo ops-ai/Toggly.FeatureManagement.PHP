@@ -51,8 +51,7 @@ if ($plugin->isEnabled('checkout-v2') !== false) {
     throw new RuntimeException('TogglyPlugin::isEnabled(checkout-v2) expected false.');
 }
 
-// Targeting uses the SDK's flat Audience.* parameter shape (see filter-parity fixtures).
-// Nested JSON {"Audience":{"Users":[...]}} is a known non-evaluation gap — reported for owner decision.
+// Targeting accepts flat Audience.* keys and nested Audience JSON (Toggly API / MF shape).
 $targetingOn = toggly_is_enabled('targeting-beta', ['identity' => 'wp-ci-user']);
 $targetingOff = toggly_is_enabled('targeting-beta', ['identity' => 'other-user']);
 if ($targetingOn !== true) {

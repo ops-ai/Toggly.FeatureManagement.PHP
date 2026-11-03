@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Targeting / `Microsoft.Targeting` now evaluates like the .NET, JS (`toggly-eval`),
+  and Definitions SDKs: `Audience.Exclusion.Users` / `Audience.Exclusion.Groups`
+  (and nested `Audience.Exclusion`) deny before includes or rollout; nested
+  `Audience` JSON (`Users`, `Groups[{Name, RolloutPercentage}]`,
+  `DefaultRolloutPercentage`) is accepted alongside the existing flat
+  `Audience.*` keys; default rollout `>= 100` enables anonymously and partial
+  rollout still fails closed without identity. Bucketing still uses the existing
+  `computePercentile` hash (`featureKey` + newline + `userId`).
+
 ### Changed
 - Dropped Laravel 10 and 11 support for `toggly/laravel`. Supported Illuminate /
   Laravel host majors are 12 and 13 only. Packagist advisory

@@ -14,11 +14,11 @@ Manual `config/app.php` registration is only needed if auto-discovery is disable
 ## Supported hosts
 
 Supported Laravel majors are **12** and **13** (packed-package host coverage
-uses Laravel 12.12.2 and 13.11.0). Laravel 10 and 11 are no longer supported
-(Packagist blocks every `laravel/framework` 10.x/11.x release via advisory
-`PKSA-b41t-wbzk-9q51`). Laravel 12 supports PHP 8.2–8.5; Laravel 13 requires
-PHP 8.3 or later. The PHP package floor remains 7.4. Provide PSR-18 client and
-request-factory bindings in the Laravel container before resolving
+pins `laravel/framework` 12.72.0 and 13.42.0). Laravel 10 and 11 are no longer
+supported (Packagist blocks every `laravel/framework` 10.x/11.x release via
+advisory `PKSA-b41t-wbzk-9q51`). Laravel 12 supports PHP 8.2–8.5; Laravel 13
+requires PHP 8.3 or later. The PHP package floor remains 7.4. Provide PSR-18
+client and request-factory bindings in the Laravel container before resolving
 `FeatureManager`, as shown in the configuration examples below.
 
 ## Configuration

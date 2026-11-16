@@ -128,8 +128,8 @@ The library is organized into three main parts:
 - OpenSSL extension (for signature verification)
 
 ### Laravel
-- Supported majors are Laravel 12 and 13; packed host checks cover Laravel
-  12.12.2 and 13.11.0. Laravel 10 and 11 are not supported.
+- Supported majors are Laravel 12 and 13; packed host checks pin
+  `laravel/framework` 12.72.0 and 13.42.0. Laravel 10 and 11 are not supported.
 
 ### WordPress
 - WordPress 5.0+ (`Requires at least: 5.0`, `Tested up to: 7.1`,

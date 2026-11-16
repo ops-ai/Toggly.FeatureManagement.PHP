@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Laravel host majors are 12 and 13 only. Packagist advisory
   `PKSA-b41t-wbzk-9q51` blocks every `laravel/framework` 10.x and 11.x release,
   so CI no longer installs those hosts and does not ignore the advisory.
-- Bumped the Laravel 13 packed host pin from 13.10.1 to 13.11.0. Laravel 12
-  remains on latest skeleton 12.12.2.
+- Bumped packed Laravel host pins to `laravel/framework` 12.72.0 and 13.42.0
+  (latest stable on Packagist). CI materializes the matching `laravel/laravel`
+  skeleton major, then locks the framework version before install. Laravel 10
+  and 11 remain unsupported.
 - Packed Laravel host bootstrap now exercises real flag evaluation through the
   facade, `FeatureGateMiddleware`, and Blade `@feature` / `@unlessfeature`
   directives against a mocked Toggly definitions API.

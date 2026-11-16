@@ -213,9 +213,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - laravel-version: '12.12.2'
+          # Matrix pins laravel/framework (Packagist). laravel/laravel skeleton
+          # versions are independent (latest 12.12.2 / 13.11.0); the install step
+          # materializes the matching skeleton major and then pins the framework.
+          - laravel-version: '12.72.0'
             php-version: '8.5'
-          - laravel-version: '13.11.0'
+          - laravel-version: '13.42.0'
             php-version: '8.5'
 
     steps:
@@ -241,13 +244,20 @@ jobs:
         run: |
           set -euo pipefail
           artifacts="$RUNNER_TEMP/toggly-php-artifacts"
-          host="$RUNNER_TEMP/laravel-${{ matrix.laravel-version }}"
+          framework_version="${{ matrix.laravel-version }}"
+          host="$RUNNER_TEMP/laravel-${framework_version}"
+          skeleton_major="${framework_version%%.*}"
           # Supported hosts are Laravel 12/13 only. Do not acknowledge or ignore
-          # Composer security advisories for these hosts.
+          # Composer security advisories for these hosts. Matrix values are
+          # laravel/framework pins; create-project uses the matching skeleton
+          # major, then require --no-update locks the framework before install.
           composer create-project --no-install --no-scripts --no-interaction --prefer-dist \
-            laravel/laravel "$host" "v${{ matrix.laravel-version }}"
-          php tests/HostFixtures/configure-laravel-policy.php "$host" "${{ matrix.laravel-version }}"
+            laravel/laravel "$host" "^${skeleton_major}.0"
+          php tests/HostFixtures/configure-laravel-policy.php "$host" "$framework_version"
+          composer --working-dir="$host" require --no-update --no-interaction \
+            "laravel/framework:${framework_version}"
           composer --working-dir="$host" install --no-interaction --prefer-dist --no-progress
+          php -r '$packages = json_decode(file_get_contents($argv[1] . "/vendor/composer/installed.json"), true, 512, JSON_THROW_ON_ERROR); foreach (($packages["packages"] ?? $packages) as $package) { if (($package["name"] ?? "") === "laravel/framework") { fwrite(STDOUT, "Resolved laravel/framework: " . ($package["version"] ?? "?") . PHP_EOL); exit(0); } } fwrite(STDERR, "laravel/framework missing from installed.json" . PHP_EOL); exit(1);' "$host"
           composer --working-dir="$host" config repositories.toggly artifact "$artifacts"
           laravel_package_version=$(php -r '$manifest = json_decode(file_get_contents("packages/laravel/composer.json"), true, 512, JSON_THROW_ON_ERROR); echo $manifest["version"];')
           composer --working-dir="$host" require --no-interaction --no-progress \
@@ -678,7 +688,7 @@ jobs:
           echo "- PHP 8.5 (latest)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Current framework hosts" >> $GITHUB_STEP_SUMMARY
-          echo "- Laravel 12.12.2 and 13.11.0 from packed artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Laravel framework 12.72.0 and 13.42.0 from packed artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- WordPress 5.0 (PHP 7.4) and 7.1.4 (PHP 8.5) plugin host checks from packed artifacts, including mocked definitions flag evaluation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Packages Tested" >> $GITHUB_STEP_SUMMARY

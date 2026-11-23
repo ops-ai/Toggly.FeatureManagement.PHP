@@ -57,9 +57,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Declared core php support is ^7.4|^8.0|...|^8.5 — exercise floor and latest
+        # Declared core php support is ^7.4|^8.0|...|^8.6 — exercise floor and latest
         # plus the previously unproven 8.0/8.1 lines.
-        php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
+        php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
 
     steps:
       - name: Checkout code
@@ -675,7 +675,8 @@ jobs:
           echo "- PHP 8.2" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.3" >> $GITHUB_STEP_SUMMARY
           echo "- PHP 8.4" >> $GITHUB_STEP_SUMMARY
-          echo "- PHP 8.5 (latest)" >> $GITHUB_STEP_SUMMARY
+          echo "- PHP 8.5" >> $GITHUB_STEP_SUMMARY
+          echo "- PHP 8.6 (latest)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Current framework hosts" >> $GITHUB_STEP_SUMMARY
           echo "- Laravel 12.12.2 and 13.11.0 from packed artifacts" >> $GITHUB_STEP_SUMMARY

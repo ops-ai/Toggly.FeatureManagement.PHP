@@ -267,8 +267,8 @@ jobs:
           # Floor: oldest WordPress proven with the core PHP floor (^7.4).
           - wordpress-version: '5.0'
             php-version: '7.4'
-          # Latest stable WordPress 7.1.x verified 2026-11-02 (7.1.4).
-          - wordpress-version: '7.1.4'
+          # Latest stable WordPress 7.1.x verified 2026-11-23 (7.1.5; endoflife.date + wordpress.org).
+          - wordpress-version: '7.1.5'
             php-version: '8.5'
     services:
       mysql:

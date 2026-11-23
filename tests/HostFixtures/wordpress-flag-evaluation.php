@@ -29,6 +29,12 @@ $cases = [
     'checkout-v2' => false,
     'empty-filters' => false,
     'missing-feature' => false,
+    // Evaluated-outcome shaped defs (AlwaysOn/AlwaysOff mirroring evaluated-variants).
+    'checkout-layout' => true,
+    'beta-banner' => false,
+    // Filter-parity fixtures that need no request context.
+    'parity-percentage-zero' => false,
+    'parity-unknown-filter' => false,
 ];
 
 foreach ($cases as $featureKey => $expected) {
@@ -62,9 +68,39 @@ if ($targetingOff !== false) {
     throw new RuntimeException('Targeting filter should deny other-user when DefaultRolloutPercentage is 0.');
 }
 
+$groupsOn = toggly_is_enabled('parity-targeting-groups', ['identity' => 'u', 'groups' => ['beta']]);
+$groupsOff = toggly_is_enabled('parity-targeting-groups', ['identity' => 'u', 'groups' => ['other']]);
+if ($groupsOn !== true) {
+    throw new RuntimeException('parity-targeting-groups should enable for group beta.');
+}
+if ($groupsOff !== false) {
+    throw new RuntimeException('parity-targeting-groups should deny without group beta.');
+}
+
+$claimsOn = toggly_is_enabled('parity-user-claims-match', ['identity' => 'u', 'claims' => ['role' => 'admin']]);
+$claimsOff = toggly_is_enabled('parity-user-claims-match', ['identity' => 'u', 'claims' => ['role' => 'user']]);
+if ($claimsOn !== true) {
+    throw new RuntimeException('parity-user-claims-match should enable for role=admin.');
+}
+if ($claimsOff !== false) {
+    throw new RuntimeException('parity-user-claims-match should deny for role=user.');
+}
+
+$browserOn = toggly_is_enabled('parity-browser-family-match', [
+    'identity' => 'u',
+    'request' => [
+        'userAgent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    ],
+]);
+if ($browserOn !== true) {
+    throw new RuntimeException('parity-browser-family-match should enable for Chrome UA.');
+}
+
 $shortcodeOn = do_shortcode('[toggly_feature name="premium-content"]VISIBLE[/toggly_feature]');
 $shortcodeOff = do_shortcode('[toggly_feature name="checkout-v2"]HIDDEN[/toggly_feature]');
 $shortcodeMissing = do_shortcode('[toggly_feature name="missing-feature"]ABSENT[/toggly_feature]');
+$shortcodeVariantOn = do_shortcode('[toggly_feature name="checkout-layout"]VARIANT_ON[/toggly_feature]');
+$shortcodeVariantOff = do_shortcode('[toggly_feature name="beta-banner"]VARIANT_OFF[/toggly_feature]');
 
 if ($shortcodeOn !== 'VISIBLE') {
     throw new RuntimeException('Enabled shortcode should render content, got: ' . $shortcodeOn);
@@ -75,7 +111,14 @@ if ($shortcodeOff !== '') {
 if ($shortcodeMissing !== '') {
     throw new RuntimeException('Missing-feature shortcode should render empty, got: ' . $shortcodeMissing);
 }
+if ($shortcodeVariantOn !== 'VARIANT_ON') {
+    throw new RuntimeException('Evaluated-outcome AlwaysOn shortcode should render, got: ' . $shortcodeVariantOn);
+}
+if ($shortcodeVariantOff !== '') {
+    throw new RuntimeException('Evaluated-outcome AlwaysOff shortcode should render empty, got: ' . $shortcodeVariantOff);
+}
 
 // No Gutenberg block surface is registered by this plugin today; helpers + shortcode
-// are the exercised public evaluation APIs.
+// are the exercised public evaluation APIs. Variant name/config accessors are not
+// exposed on the WordPress public surface (no getVariant helper / enable_variants setting).
 fwrite(STDOUT, "Toggly WordPress flag evaluation against mocked definitions API passed.\n");

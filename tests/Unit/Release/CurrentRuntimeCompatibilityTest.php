@@ -10,13 +10,13 @@ use Toggly\FeatureManagement\SdkIdentity;
  */
 class CurrentRuntimeCompatibilityTest extends TestCase
 {
-    public function testPackageConstraintsRetainExistingPhpLinesAndIncludePhp85(): void
+    public function testPackageConstraintsRetainExistingPhpLinesAndIncludePhp86(): void
     {
         foreach (['composer.json', 'packages/laravel/composer.json', 'packages/wordpress/composer.json'] as $manifest) {
             $json = $this->readJson($manifest);
 
             $this->assertSame(
-                '^7.4|^8.0|^8.1|^8.2|^8.3|^8.4|^8.5',
+                '^7.4|^8.0|^8.1|^8.2|^8.3|^8.4|^8.5|^8.6',
                 $json['require']['php'],
                 $manifest
             );
@@ -46,8 +46,8 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $workflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/ci.yml');
         $releaseWorkflow = (string) file_get_contents($this->repoRoot() . '/.github/workflows/release.yml');
 
-        $this->assertStringContainsString("php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']", $workflow);
-        $this->assertStringContainsString("'8.5'", $workflow);
+        $this->assertStringContainsString("php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']", $workflow);
+        $this->assertStringContainsString("'8.6'", $workflow);
         $this->assertStringContainsString("laravel-version: '12.12.2'", $workflow);
         $this->assertStringContainsString("laravel-version: '13.11.0'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);

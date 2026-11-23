@@ -109,7 +109,7 @@ class CurrentRuntimeCompatibilityTest extends TestCase
         $this->assertNotFalse($wordpressJob);
         $this->assertStringContainsString("wordpress-version: '5.0'", $wordpressJob);
         $this->assertStringContainsString("php-version: '7.4'", $wordpressJob);
-        $this->assertStringContainsString("wordpress-version: '7.1.4'", $wordpressJob);
+        $this->assertStringContainsString("wordpress-version: '7.1.5'", $wordpressJob);
         $this->assertStringContainsString("php-version: '8.5'", $wordpressJob);
         $this->assertStringContainsString('wordpress-mock-definitions-server.php', $wordpressJob);
         $this->assertStringContainsString('wordpress-flag-evaluation.php', $wordpressJob);

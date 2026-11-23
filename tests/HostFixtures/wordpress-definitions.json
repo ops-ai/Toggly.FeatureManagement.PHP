@@ -33,5 +33,83 @@
         }
       }
     ]
+  },
+  {
+    "featureKey": "parity-targeting-groups",
+    "requirementType": "Any",
+    "filters": [
+      {
+        "name": "Targeting",
+        "parameters": {
+          "Audience.DefaultRolloutPercentage": 0,
+          "Audience.Groups:0": "beta"
+        }
+      }
+    ]
+  },
+  {
+    "featureKey": "parity-percentage-zero",
+    "requirementType": "Any",
+    "filters": [
+      {
+        "name": "Percentage",
+        "parameters": {
+          "Value": 0
+        }
+      }
+    ]
+  },
+  {
+    "featureKey": "parity-unknown-filter",
+    "requirementType": "Any",
+    "filters": [
+      {
+        "name": "DoesNotExist",
+        "parameters": {}
+      }
+    ]
+  },
+  {
+    "featureKey": "parity-user-claims-match",
+    "requirementType": "Any",
+    "filters": [
+      {
+        "name": "UserClaims",
+        "parameters": {
+          "Percentage": 100,
+          "Claim": "role",
+          "Value": "admin"
+        }
+      }
+    ]
+  },
+  {
+    "featureKey": "parity-browser-family-match",
+    "requirementType": "Any",
+    "filters": [
+      {
+        "name": "BrowserFamily",
+        "parameters": {
+          "Percentage": 100,
+          "BrowserFamily:0": "Chrome"
+        }
+      }
+    ]
+  },
+  {
+    "featureKey": "checkout-layout",
+    "filters": [
+      {
+        "name": "AlwaysOn"
+      }
+    ]
+  },
+  {
+    "featureKey": "beta-banner",
+    "filters": [
+      {
+        "name": "AlwaysOff"
+      }
+    ]
   }
 ]

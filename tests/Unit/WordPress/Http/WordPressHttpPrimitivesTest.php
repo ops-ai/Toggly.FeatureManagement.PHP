@@ -1,60 +1,6 @@
 <?php
 
-namespace {
-    if (!class_exists('WP_Error')) {
-        class WP_Error
-        {
-            public function __construct(private string $message)
-            {
-            }
-
-            public function get_error_message(): string
-            {
-                return $this->message;
-            }
-        }
-    }
-
-}
-
-namespace Toggly\WordPress\Http {
-    function wp_get_current_user(): mixed
-    {
-        return $GLOBALS['toggly_wordpress_current_user'] ?? null;
-    }
-
-    function wp_remote_request(string $url, array $args): mixed
-    {
-        $GLOBALS['toggly_wordpress_http_request'] = compact('url', 'args');
-
-        return $GLOBALS['toggly_wordpress_http_response'];
-    }
-
-    function is_wp_error(mixed $response): bool
-    {
-        return $response instanceof \WP_Error;
-    }
-
-    function wp_remote_retrieve_response_code(array $response): int
-    {
-        return $response['response']['code'];
-    }
-
-    function wp_remote_retrieve_response_message(array $response): string
-    {
-        return $response['response']['message'];
-    }
-
-    function wp_remote_retrieve_body(array $response): string
-    {
-        return $response['body'];
-    }
-
-    function wp_remote_retrieve_headers(array $response): array
-    {
-        return $response['headers'];
-    }
-}
+// HTTP transport stubs live in tests/fixtures/WordPressHttpTransportStubs.php (bootstrap).
 
 namespace Toggly\FeatureManagement\Tests\Unit\WordPress\Http {
     use PHPUnit\Framework\TestCase;

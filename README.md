@@ -366,10 +366,10 @@ helpers and are not the evaluation path.
 
 ## Laravel Requirements
 
-- Laravel 12 or 13. Packed-package host coverage uses Laravel 12.12.2 and
-  13.11.0 with the PHP versions each host supports. Laravel 10 and 11 are
-  not supported (`laravel/framework` 10.x/11.x are blocked on Packagist by
-  advisory `PKSA-b41t-wbzk-9q51`).
+- Laravel 12 or 13. Packed-package host coverage pins `laravel/framework`
+  12.72.0 and 13.42.0 with the PHP versions each host supports. Laravel 10
+  and 11 are not supported (`laravel/framework` 10.x/11.x are blocked on
+  Packagist by advisory `PKSA-b41t-wbzk-9q51`).
 - `illuminate/support`
 - `illuminate/http`
 

@@ -48,8 +48,9 @@ class CurrentRuntimeCompatibilityTest extends TestCase
 
         $this->assertStringContainsString("php-version: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']", $workflow);
         $this->assertStringContainsString("'8.5'", $workflow);
-        $this->assertStringContainsString("laravel-version: '12.12.2'", $workflow);
-        $this->assertStringContainsString("laravel-version: '13.11.0'", $workflow);
+        $this->assertStringContainsString("laravel-version: '12.72.0'", $workflow);
+        $this->assertStringContainsString("laravel-version: '13.42.0'", $workflow);
+        $this->assertStringContainsString('"laravel/framework:${framework_version}"', $workflow);
         $this->assertStringNotContainsString("laravel-version: '10.3.3'", $workflow);
         $this->assertStringNotContainsString("laravel-version: '11.6.1'", $workflow);
         $this->assertStringContainsString('composer archive --format=tar', $workflow);
@@ -135,7 +136,7 @@ class CurrentRuntimeCompatibilityTest extends TestCase
 
     public function testConfigureLaravelPolicyIsANoOpForSupportedHosts(): void
     {
-        foreach (['12.12.2', '13.11.0'] as $laravelVersion) {
+        foreach (['12.72.0', '13.42.0'] as $laravelVersion) {
             $hostDirectory = sys_get_temp_dir() . '/toggly-laravel-policy-' . bin2hex(random_bytes(8));
             mkdir($hostDirectory);
             $manifestPath = $hostDirectory . '/composer.json';

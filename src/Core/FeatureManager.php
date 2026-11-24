@@ -241,41 +241,451 @@ class FeatureManager
     }
 
     /**
+     * Targeting / Microsoft.Targeting evaluation.
+     *
+     * Accepts both the nested Audience object (Toggly API /
+     * Microsoft.FeatureManagement) and flat Definitions-style keys
+     * (Audience.Users:N, Audience.Groups:N, Audience.Exclusion.*:N).
+     *
+     * Order matches .NET / toggly-eval: exclusions → included users →
+     * group rollouts → default rollout. Bucketing uses computePercentile
+     * (featureKey + "\n" + userId); the algorithm is unchanged.
+     *
      * @param array<string, mixed>|null $context
      */
     private function evaluateTargetingFilter(FeatureFilter $filter, string $featureKey, ?array $context = null): bool
     {
-        if ($context === null) {
-            return false;
+        $enabled = false;
+        if ($context !== null) {
+            $params = $filter->parameters ?? [];
+            $audience = $this->resolveTargetingAudience($params);
+            $ignoreCase = $this->asBool($params, 'IgnoreCase');
+            if ($ignoreCase === null) {
+                // Match Definitions / .NET TogglyTargetingFilter / toggly-eval default.
+                $ignoreCase = true;
+            }
+
+            $identity = $this->getIdentity($context);
+            $userGroups = $this->getGroups($context);
+            $excluded = $this->isTargetingExcluded(
+                $audience['exclusionUsers'],
+                $audience['exclusionGroups'],
+                $identity,
+                $userGroups,
+                $ignoreCase
+            );
+            if (!$excluded) {
+                $includedUser = $identity !== null && $identity !== ''
+                    && $this->stringListContains($audience['users'], $identity, $ignoreCase);
+                if ($includedUser) {
+                    $enabled = true;
+                } elseif ($this->matchesAnyGroupRollout(
+                    $audience['groups'],
+                    $userGroups,
+                    $identity,
+                    $featureKey,
+                    $ignoreCase
+                )) {
+                    $enabled = true;
+                } else {
+                    $enabled = $this->matchesDefaultRollout(
+                        $audience['defaultRollout'],
+                        $identity,
+                        $featureKey
+                    );
+                }
+            }
         }
 
-        $params = $filter->parameters ?? [];
-        $identity = $this->getIdentity($context);
+        return $enabled;
+    }
 
-        $users = $this->collectTargetingUsers($params);
-        if ($identity !== null && $identity !== '' && in_array($identity, $users, true)) {
-            return true;
+    /**
+     * @param list<array{name: string, rollout: float|null}> $groups
+     * @param string[] $userGroups
+     */
+    private function matchesAnyGroupRollout(
+        array $groups,
+        array $userGroups,
+        ?string $identity,
+        string $featureKey,
+        bool $ignoreCase
+    ): bool {
+        $matched = false;
+        foreach ($groups as $group) {
+            if ($matched) {
+                break;
+            }
+            $groupName = $group['name'];
+            if ($groupName === '' || !$this->stringListContains($userGroups, $groupName, $ignoreCase)) {
+                continue;
+            }
+            $rollout = $group['rollout'];
+            // Flat Audience.Groups:N strings and nested groups without an
+            // explicit RolloutPercentage are full includes.
+            $fullInclude = $rollout === null || $rollout >= 100;
+            $partialHit = $rollout !== null && $rollout > 0 && $rollout < 100
+                && $identity !== null && $identity !== ''
+                && self::computePercentile($identity, $featureKey) < $rollout;
+            if ($fullInclude || $partialHit) {
+                $matched = true;
+            }
         }
 
-        $groups = $this->collectTargetingGroups($params);
-        $userGroups = $this->getGroups($context);
-        if ($groups !== [] && $userGroups !== [] && array_intersect($groups, $userGroups) !== []) {
-            return true;
+        return $matched;
+    }
+
+    private function matchesDefaultRollout(?float $defaultPercentage, ?string $identity, string $featureKey): bool
+    {
+        $matched = false;
+        if ($defaultPercentage !== null && $defaultPercentage > 0) {
+            if ($defaultPercentage >= 100) {
+                $matched = true;
+            } elseif ($identity !== null && $identity !== '') {
+                $matched = self::computePercentile($identity, $featureKey) < $defaultPercentage;
+            }
         }
 
-        $defaultPercentage = $this->asFloat(
-            $params,
-            'Audience.DefaultRolloutPercentage',
-            'DefaultRolloutPercentage',
-            'defaultRolloutPercentage',
-            'default_percentage',
-            'Percentage'
-        );
-        if ($defaultPercentage !== null && $defaultPercentage > 0 && $identity !== null && $identity !== '') {
-            return self::computePercentile($identity, $featureKey) < $defaultPercentage;
+        return $matched;
+    }
+
+    /**
+     * Normalize nested Audience JSON and flat Audience.* keys into one shape.
+     *
+     * @param array<string, mixed> $params
+     * @return array{
+     *     users: string[],
+     *     groups: list<array{name: string, rollout: float|null}>,
+     *     exclusionUsers: string[],
+     *     exclusionGroups: string[],
+     *     defaultRollout: float|null
+     * }
+     */
+    private function resolveTargetingAudience(array $params): array
+    {
+        $state = [
+            'users' => [],
+            'groups' => [],
+            'exclusionUsers' => [],
+            'exclusionGroups' => [],
+            'defaultRollout' => null,
+        ];
+        $this->mergeNestedAudience($state, $params['Audience'] ?? null);
+        $this->appendStringList($state['users'], $params['users'] ?? $params['Users'] ?? null);
+        $this->appendGroupEntries($state['groups'], $params['groups'] ?? $params['Groups'] ?? null);
+        $this->mergeIndexedAudienceKeys($state, $params);
+        if ($state['defaultRollout'] === null) {
+            $state['defaultRollout'] = $this->asFloat(
+                $params,
+                'Audience.DefaultRolloutPercentage',
+                'Audience:DefaultRolloutPercentage',
+                'DefaultRolloutPercentage',
+                'defaultRolloutPercentage',
+                'default_percentage',
+                'Percentage'
+            );
         }
 
-        return false;
+        return $state;
+    }
+
+    /**
+     * @param array{
+     *     users: string[],
+     *     groups: list<array{name: string, rollout: float|null}>,
+     *     exclusionUsers: string[],
+     *     exclusionGroups: string[],
+     *     defaultRollout: float|null
+     * } $state
+     * @param mixed $audience
+     */
+    private function mergeNestedAudience(array &$state, $audience): void
+    {
+        if (!is_array($audience)) {
+            return;
+        }
+
+        $this->appendStringList($state['users'], $audience['Users'] ?? $audience['users'] ?? null);
+        $exclusion = $audience['Exclusion'] ?? null;
+        if (is_array($exclusion)) {
+            $this->appendStringList($state['exclusionUsers'], $exclusion['Users'] ?? $exclusion['users'] ?? null);
+            $this->appendStringList($state['exclusionGroups'], $exclusion['Groups'] ?? $exclusion['groups'] ?? null);
+        }
+
+        $this->appendGroupEntries($state['groups'], $audience['Groups'] ?? $audience['groups'] ?? null);
+
+        if (array_key_exists('DefaultRolloutPercentage', $audience)
+            || array_key_exists('defaultRolloutPercentage', $audience)
+        ) {
+            $rawDefault = $audience['DefaultRolloutPercentage'] ?? $audience['defaultRolloutPercentage'];
+            if (is_numeric($rawDefault)) {
+                $state['defaultRollout'] = (float)$rawDefault;
+            }
+        }
+    }
+
+    /**
+     * @param array{
+     *     users: string[],
+     *     groups: list<array{name: string, rollout: float|null}>,
+     *     exclusionUsers: string[],
+     *     exclusionGroups: string[],
+     *     defaultRollout: float|null
+     * } $state
+     * @param array<string, mixed> $params
+     */
+    private function mergeIndexedAudienceKeys(array &$state, array $params): void
+    {
+        $namedGroupRollouts = [];
+        foreach ($params as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $keyStr = (string)$key;
+            if ($this->targetingKeyMatches($keyStr, 'Audience.Users', 'Audience:Users')) {
+                $state['users'][] = (string)$value;
+                continue;
+            }
+            if ($this->targetingKeyMatches($keyStr, 'Audience.Exclusion.Users', 'Audience:Exclusion:Users')) {
+                $state['exclusionUsers'][] = (string)$value;
+                continue;
+            }
+            if ($this->targetingKeyMatches($keyStr, 'Audience.Exclusion.Groups', 'Audience:Exclusion:Groups')) {
+                $state['exclusionGroups'][] = (string)$value;
+                continue;
+            }
+            $this->mergeIndexedGroupKey($state['groups'], $namedGroupRollouts, $keyStr, $value);
+        }
+
+        foreach ($namedGroupRollouts as $named) {
+            $name = trim((string)$named['name']);
+            if ($name !== '') {
+                $state['groups'][] = ['name' => $name, 'rollout' => $named['rollout']];
+            }
+        }
+    }
+
+    /**
+     * @param list<array{name: string, rollout: float|null}> $groups
+     * @param array<string, array{name: string, rollout: float|null}> $namedGroupRollouts
+     * @param mixed $value
+     */
+    private function mergeIndexedGroupKey(array &$groups, array &$namedGroupRollouts, string $keyStr, $value): void
+    {
+        if (preg_match('/^Audience[.:]Groups:(\d+)[.:]Name$/i', $keyStr, $m) === 1) {
+            $idx = $m[1];
+            if (!isset($namedGroupRollouts[$idx])) {
+                $namedGroupRollouts[$idx] = ['name' => '', 'rollout' => null];
+            }
+            $namedGroupRollouts[$idx]['name'] = (string)$value;
+
+            return;
+        }
+        if (preg_match('/^Audience[.:]Groups:(\d+)[.:]RolloutPercentage$/i', $keyStr, $m) === 1) {
+            $idx = $m[1];
+            if (!isset($namedGroupRollouts[$idx])) {
+                $namedGroupRollouts[$idx] = ['name' => '', 'rollout' => null];
+            }
+            if (is_numeric($value)) {
+                $namedGroupRollouts[$idx]['rollout'] = (float)$value;
+            }
+
+            return;
+        }
+        if (preg_match('/^Audience[.:]Groups:(\d+)$/i', $keyStr) === 1) {
+            $groups[] = ['name' => (string)$value, 'rollout' => null];
+        }
+    }
+
+    /**
+     * @param string[] $exclusionUsers
+     * @param string[] $exclusionGroups
+     * @param string[] $userGroups
+     */
+    private function isTargetingExcluded(
+        array $exclusionUsers,
+        array $exclusionGroups,
+        ?string $identity,
+        array $userGroups,
+        bool $ignoreCase
+    ): bool {
+        $excluded = $identity !== null && $identity !== ''
+            && $this->stringListContains($exclusionUsers, $identity, $ignoreCase);
+        if (!$excluded && $exclusionGroups !== [] && $userGroups !== []) {
+            foreach ($exclusionGroups as $candidate) {
+                if ($this->stringListContains($userGroups, $candidate, $ignoreCase)) {
+                    $excluded = true;
+                    break;
+                }
+            }
+        }
+
+        return $excluded;
+    }
+
+    /**
+     * @param string[] $list
+     */
+    private function stringListContains(array $list, string $needle, bool $ignoreCase): bool
+    {
+        $found = false;
+        if ($needle !== '') {
+            foreach ($list as $item) {
+                $matches = $ignoreCase
+                    ? strcasecmp((string)$item, $needle) === 0
+                    : (string)$item === $needle;
+                if ($matches) {
+                    $found = true;
+                    break;
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * True when $key is an indexed value under one of the given prefixes
+     * (prefix + ":" + remainder), matching .NET / toggly-eval CollectIndexedValues.
+     */
+    private function targetingKeyMatches(string $key, string ...$prefixes): bool
+    {
+        $matched = false;
+        foreach ($prefixes as $prefix) {
+            if (strpos($key, $prefix . ':') === 0) {
+                $matched = true;
+                break;
+            }
+        }
+
+        return $matched;
+    }
+
+    /**
+     * @param string[] $out
+     * @param mixed $raw
+     */
+    private function appendStringList(array &$out, $raw): void
+    {
+        if ($raw === null || $raw === '') {
+            return;
+        }
+        $values = is_array($raw) ? $raw : explode(',', (string)$raw);
+        foreach ($values as $item) {
+            if ($item === null || $item === '') {
+                continue;
+            }
+            $text = trim((string)$item);
+            if ($text !== '') {
+                $out[] = $text;
+            }
+        }
+    }
+
+    /**
+     * @param list<array{name: string, rollout: float|null}> $groups
+     * @param mixed $raw
+     */
+    private function appendGroupEntries(array &$groups, $raw): void
+    {
+        if ($raw === null || $raw === '') {
+            return;
+        }
+        $values = is_array($raw) ? $raw : explode(',', (string)$raw);
+        foreach ($values as $item) {
+            $parsed = $this->parseGroupRolloutEntry($item);
+            if ($parsed !== null) {
+                $groups[] = $parsed;
+            }
+        }
+    }
+
+    /**
+     * @param mixed $entry
+     * @return array{name: string, rollout: float|null}|null
+     */
+    private function parseGroupRolloutEntry($entry): ?array
+    {
+        $parsed = null;
+        if (is_string($entry) || is_numeric($entry)) {
+            $name = trim((string)$entry);
+            if ($name !== '') {
+                $parsed = ['name' => $name, 'rollout' => null];
+            }
+        } elseif (is_array($entry)) {
+            $parsed = $this->parseNamedGroupRollout($entry);
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     * @return array{name: string, rollout: float|null}|null
+     */
+    private function parseNamedGroupRollout(array $entry): ?array
+    {
+        $parsed = null;
+        $nameRaw = $entry['Name'] ?? $entry['name'] ?? null;
+        if ($nameRaw !== null && $nameRaw !== '') {
+            $name = trim((string)$nameRaw);
+            if ($name !== '') {
+                $parsed = [
+                    'name' => $name,
+                    'rollout' => $this->readGroupRolloutPercentage($entry),
+                ];
+            }
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     */
+    private function readGroupRolloutPercentage(array $entry): ?float
+    {
+        $rollout = null;
+        if (array_key_exists('RolloutPercentage', $entry) || array_key_exists('rolloutPercentage', $entry)) {
+            $rawPct = $entry['RolloutPercentage'] ?? $entry['rolloutPercentage'];
+            if (is_numeric($rawPct)) {
+                $rollout = (float)$rawPct;
+            }
+        }
+
+        return $rollout;
+    }
+
+    /**
+     * @param array<string, mixed>|null $params
+     */
+    private function asBool(?array $params, string $key): ?bool
+    {
+        $result = null;
+        if ($params !== null && array_key_exists($key, $params) && $params[$key] !== null) {
+            $result = $this->coerceBoolValue($params[$key]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function coerceBoolValue($value): ?bool
+    {
+        $result = null;
+        if (is_bool($value)) {
+            $result = $value;
+        } elseif ((is_int($value) || is_float($value)) && ((float)$value === 1.0 || (float)$value === 0.0)) {
+            $result = (float)$value === 1.0;
+        } elseif (is_string($value) && in_array($value, ['true', 'True', '1'], true)) {
+            $result = true;
+        } elseif (is_string($value) && in_array($value, ['false', 'False', '0'], true)) {
+            $result = false;
+        }
+
+        return $result;
     }
 
     /**
@@ -492,56 +902,6 @@ class FeatureManager
         }
 
         return $out;
-    }
-
-    /**
-     * @param array<string, mixed> $params
-     * @return string[]
-     */
-    private function collectTargetingUsers(array $params): array
-    {
-        $users = [];
-        $usersStr = $params['users'] ?? $params['Users'] ?? null;
-        if ($usersStr !== null && $usersStr !== '') {
-            foreach (explode(',', (string)$usersStr) as $u) {
-                $u = trim($u);
-                if ($u !== '') {
-                    $users[] = $u;
-                }
-            }
-        }
-        foreach ($params as $key => $value) {
-            if (strpos((string)$key, 'Audience.Users:') === 0 && $value !== null && $value !== '') {
-                $users[] = (string)$value;
-            }
-        }
-
-        return $users;
-    }
-
-    /**
-     * @param array<string, mixed> $params
-     * @return string[]
-     */
-    private function collectTargetingGroups(array $params): array
-    {
-        $groups = [];
-        $groupsStr = $params['groups'] ?? $params['Groups'] ?? null;
-        if ($groupsStr !== null && $groupsStr !== '') {
-            foreach (explode(',', (string)$groupsStr) as $g) {
-                $g = trim($g);
-                if ($g !== '') {
-                    $groups[] = $g;
-                }
-            }
-        }
-        foreach ($params as $key => $value) {
-            if (strpos((string)$key, 'Audience.Groups:') === 0 && $value !== null && $value !== '') {
-                $groups[] = (string)$value;
-            }
-        }
-
-        return $groups;
     }
 
     /**
